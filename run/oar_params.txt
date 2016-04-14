@@ -1,1 +1,18 @@
-../data/pbrt-v3-scenes/breakfast/breakfast.pbrt
+--outfile whiteroom-daytime.png    ../data/pbrt-v3-scenes/white-room/whiteroom-daytime.pbrt
+--outfile whiteroom-night.png      ../data/pbrt-v3-scenes/white-room/whiteroom-night.pbrt
+--outfile bunny.png                ../data/pbrt-v3-scenes/bunny-fur/bunny.pbrt
+--outfile bidir.png                ../data/pbrt-v3-scenes/veach-bidir/bidir.pbrt
+--outfile dragons.png              ../data/pbrt-v3-scenes/dragons/dragons.pbrt
+--outfile ganesha.png              ../data/pbrt-v3-scenes/ganesha/ganesha.pbrt
+--outfile sportscar-day.png        ../data/pbrt-v3-scenes/sportscar/sportscar-day.pbrt
+--outfile sportscar-sunset.png     ../data/pbrt-v3-scenes/sportscar/sportscar-sunset.pbrt
+--outfile breakfast.png            ../data/pbrt-v3-scenes/breakfast/breakfast.pbrt
+--outfile spheres.png              ../data/pbrt-v3-scenes/subusrface-spheres/spheres.pbrt
+--outfile coffee-splash.png        ../data/pbrt-v3-scenes/coffee-splash/coffee-splash.pbrt
+--outfile sphere.png               ../data/pbrt-v3-scenes/medium-sphere/sphere.pbrt
+--outfile head.png                 ../data/pbrt-v3-scenes/head/head.pbrt
+--outfile mlt.png                  ../data/pbrt-v3-scenes/veach-mlt/mlt.pbrt
+--outfile glass.png                ../data/pbrt-v3-scenes/caustic-glass/glass.pbrt
+--outfile cloud.png                ../data/pbrt-v3-scenes/cloud/cloud.pbrt
+--outfile volume-caustic.png       ../data/pbrt-v3-scenes/volume-caustic/volume-caustic.pbrt
+

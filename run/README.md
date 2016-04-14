@@ -1,6 +1,6 @@
-# run pbrt with oar
+# Run pbrt with OAR
 
-## batch mode
+## Using a classic script
 
 edit `oar_batch.sh` then:
 
@@ -8,7 +8,7 @@ edit `oar_batch.sh` then:
 oarsub -S ./oar_batch.sh
 ```
 
-## params mode
+## Using a parameter array
 
 edit `oar_params.txt` and `oar_params.sh` then:
 
@@ -16,9 +16,9 @@ edit `oar_params.txt` and `oar_params.sh` then:
 oarsub -S ./oar_params.sh
 ```
 
-## get results
+## Get results
 
 ```
-scp pbrt.png dehos@yangra.univ-littoral.fr:public-html/tmp
+scp *.png dehos@yangra.univ-littoral.fr:public-html/tmp
 ```
 
