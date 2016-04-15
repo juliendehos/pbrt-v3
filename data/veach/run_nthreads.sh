@@ -11,7 +11,7 @@ rm -f $OUTPUT
 
 for scene in $SCENES ; do
     for nthread in $NTHREADS ; do
-        t=$(../../build/pbrt $scene "Rendering " | awk '{print $3}')
+        t=$(../../build/pbrt --nthreads $nthread $scene | grep "Rendering " | awk '{print $3}')
         echo "${scene}; ${nthread}; ${t}" >> $OUTPUT
     done
 done
