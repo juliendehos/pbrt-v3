@@ -114,19 +114,16 @@
 #include "media/grid.h"
 #include "media/homogeneous.h"
 #include <map>
-#if (_MSC_VER >= 1400)
 #include <stdio.h>
-#define snprintf _snprintf
-#endif
 
 // API Global Variables
 Options PbrtOptions;
 
 // API Local Classes
-constexpr int MaxTransforms = 2;
-constexpr int StartTransformBits = 1 << 0;
-constexpr int EndTransformBits = 1 << 1;
-constexpr int AllTransformsBits = (1 << MaxTransforms) - 1;
+PBRT_CONSTEXPR int MaxTransforms = 2;
+PBRT_CONSTEXPR int StartTransformBits = 1 << 0;
+PBRT_CONSTEXPR int EndTransformBits = 1 << 1;
+PBRT_CONSTEXPR int AllTransformsBits = (1 << MaxTransforms) - 1;
 struct TransformSet {
     // TransformSet Public Methods
     Transform &operator[](int i) {

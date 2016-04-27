@@ -35,53 +35,70 @@
 #pragma once
 #endif
 
-#ifndef PBRT_CORE_PARALLEL_H
-#define PBRT_CORE_PARALLEL_H
+#ifndef PBRT_CORE_PORT_H
+#define PBRT_CORE_PORT_H
 #include "stdafx.h"
 
-// core/parallel.h*
-#include "pbrt.h"
-#include "geometry.h"
-#include <mutex>
-#include <functional>
-#include <atomic>
-
-// Parallel Declarations
-class AtomicFloat {
-  public:
-    // AtomicFloat Public Methods
-    explicit AtomicFloat(Float v = 0) { bits = FloatToBits(v); }
-    operator Float() const { return BitsToFloat(bits); }
-    Float operator=(Float v) {
-        bits = FloatToBits(v);
-        return v;
-    }
-    void Add(Float v) {
-#ifdef PBRT_FLOAT_AS_DOUBLE
-        uint64_t oldBits = bits, newBits;
-#else
-        uint32_t oldBits = bits, newBits;
+#if defined(_WIN32) || defined(_WIN64)
+  #define PBRT_IS_WINDOWS
+  #if defined(__MINGW32__)  // Defined for both 32 bit/64 bit MinGW
+    #define PBRT_IS_MINGW
+  #elif defined(_MSC_VER)
+    #define PBRT_IS_MSVC
+  #endif
+#elif defined(__linux__)
+  #define PBRT_IS_LINUX
+#elif defined(__APPLE__)
+  #define PBRT_IS_OSX
+#elif defined(__OpenBSD__)
+  #define PBRT_IS_OPENBSD
+#elif defined(__FreeBSD__)
+  #define PBRT_IS_FREEBSD
 #endif
-        do {
-            newBits = FloatToBits(BitsToFloat(oldBits) + v);
-        } while (!bits.compare_exchange_weak(oldBits, newBits));
-    }
 
-  private:
-// AtomicFloat Private Data
-#ifdef PBRT_FLOAT_AS_DOUBLE
-    std::atomic<uint64_t> bits;
-#else
-    std::atomic<uint32_t> bits;
+#if defined(_MSC_VER) && _MSC_VER == 1900
+   #define PBRT_IS_MSVC2015
 #endif
-};
 
-void ParallelFor(const std::function<void(int64_t)> &func, int64_t count,
-                 int chunkSize = 1);
-extern PBRT_THREAD_LOCAL int ThreadIndex;
-void ParallelFor2D(std::function<void(Point2i)> func, const Point2i &count);
-int MaxThreadIndex();
-int NumSystemCores();
-void TerminateWorkerThreads();
+#if defined(_MSC_VER) && _MSC_VER == 1800
+  #define PBRT_IS_MSVC2013
+#endif
 
-#endif  // PBRT_CORE_PARALLEL_H
+///////////////////////////////////////////////////////////////////////////
+// Now, use what we've figured out to do #defines for features and to do
+// various target-specific workarounds.
+
+#if !defined(PBRT_IS_MSVC)
+  #define PBRT_HAVE_HEX_FP_CONSTANTS
+  #define PBRT_HAVE_BINARY_CONSTANTS
+#endif
+
+#if defined(PBRT_IS_LINUX) || defined(PBRT_IS_WINDOWS)
+  #define PBRT_HAVE_MALLOC_H
+#endif
+
+#ifdef PBRT_IS_LINUX
+  #define PBRT_HAVE_ALLOCA_H
+#endif
+
+#if defined(PBRT_IS_MSVC)
+  #define PBRT_THREAD_LOCAL __declspec(thread)
+#else
+  #define PBRT_THREAD_LOCAL __thread
+#endif
+
+#ifdef PBRT_IS_MSVC2013
+  #define PBRT_CONSTEXPR const
+#else
+  #define PBRT_CONSTEXPR constexpr
+#endif
+
+#if !defined(PBRT_IS_MSVC2013)
+  #define PBRT_HAVE_ALIGNAS
+#endif
+
+#ifdef PBRT_IS_MSVC2013
+  #define snprintf _snprintf
+#endif
+
+#endif // PBRT_CORE_PORT_H

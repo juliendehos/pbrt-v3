@@ -141,7 +141,11 @@ struct Vertex {
     // Vertex Public Data
     VertexType type;
     Spectrum beta;
-    union {
+#ifdef PBRT_IS_MSVC2013
+  struct {
+#else
+  union {
+#endif // PBRT_IS_MSVC2013
         EndpointInteraction ei;
         MediumInteraction mi;
         SurfaceInteraction si;
@@ -227,6 +231,8 @@ struct Vertex {
                                                    BSDF_REFLECTION |
                                                    BSDF_TRANSMISSION)) > 0;
         }
+        Severe("Unhandled vertex type in IsConnectable()");
+        return false;  // NOTREACHED
     }
     bool IsLight() const {
         return type == VertexType::Light ||
