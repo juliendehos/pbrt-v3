@@ -1,10 +1,12 @@
-Integrator "mlt" "integer mutationsperpixel" [128] "float largestepprobability" [0.1]
-#Integrator "mlt" "integer mutationsperpixel" [512] "float largestepprobability" [0.1]
+#Integrator "mlt" "integer mutationsperpixel" [8] "float largestepprobability" [0.1]
+#Integrator "mlt" "integer mutationsperpixel" [128] "float largestepprobability" [0.1]
+Integrator "mlt" "integer mutationsperpixel" [512] "float largestepprobability" [0.1]
 
 
 PixelFilter "box"
 
 Film "image" "integer xresolution" [1280] "integer yresolution" [720] "string filename" "mlt.png"
+#Film "image" "integer xresolution" [768] "integer yresolution" [576] "string filename" "mlt.png"
 #Film "image" "integer xresolution" [768] "integer yresolution" [576] "string filename" "mlt.exr"
 
 Scale -1 1 1
