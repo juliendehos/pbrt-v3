@@ -1,12 +1,12 @@
-Integrator "mlt" "integer mutationsperpixel" [1000] "float largestepprobability" [0.5]
+Integrator "mlt" "integer mutationsperpixel" [10] "float largestepprobability" [0.5]
 
 PixelFilter "box"
 
-Film "image" "integer xresolution" [768] "integer yresolution" [576] "string filename" "reference.exr"
+Film "image" "integer xresolution" [1000] "integer yresolution" [1000] "string filename" "reference.exr"
 
 Scale -1 1 1
 LookAt -0.223944 -6.64245 0.366128 -0.261616 -5.64477 0.309317 0.0 0.0 1.0
-Camera "perspective" "float fov" [34.156546598304615]
+Camera "perspective" "float fov" [38.156546598304615]
 
 WorldBegin
 MakeNamedMaterial "Glass" "string type" "glass" "float index" [1.5]

@@ -1,4 +1,10 @@
 #!/bin/sh
-mkdir -p tmp
-scp jdehos@calculco.univ-littoral.fr:depots/github/pbrt-v3/data/veach/* tmp/
 
+if [ $# -ne 2 ] ; then
+    echo "usage: $0 <login> <output directory> "
+    exit
+fi
+mylogin=$1
+outdir=$2
+
+scp ${mylogin}@calculco.univ-littoral.fr:pbrt-calculco/data/veach/* ${outdir}
