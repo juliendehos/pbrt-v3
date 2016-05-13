@@ -1406,6 +1406,8 @@ Integrator *RenderOptions::MakeIntegrator() const {
     else if (IntegratorName == "directlighting")
         integrator =
             CreateDirectLightingIntegrator(IntegratorParams, sampler, camera);
+    else if (IntegratorName == "tlt")
+        integrator = CreateTltIntegrator(IntegratorParams, sampler, camera);
     else if (IntegratorName == "path")
         integrator = CreatePathIntegrator(IntegratorParams, sampler, camera);
     else if (IntegratorName == "volpath")

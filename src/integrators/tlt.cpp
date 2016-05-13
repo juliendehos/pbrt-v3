@@ -47,6 +47,52 @@ STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 Spectrum TltIntegrator::Li(const RayDifferential &r, const Scene &scene,
                             Sampler &sampler, MemoryArena &arena,
                             int depth) const {
+
+    // Whitted
+    RayDifferential ray(r);
+    Spectrum L(0.);
+    // Find closest ray intersection or return background radiance
+    SurfaceInteraction isect;
+    if (!scene.Intersect(ray, &isect)) {
+        for (const auto &light : scene.lights) L += light->Le(r);
+        return L;
+    }
+
+    // Compute emitted and reflected light at ray intersection point
+
+    // Initialize common variables for Whitted integrator
+    const Normal3f &n = isect.shading.n;
+    Vector3f wo = isect.wo;
+
+    // Compute scattering functions for surface interaction
+    isect.ComputeScatteringFunctions(ray, arena);
+    if (!isect.bsdf)
+        return Li(isect.SpawnRay(ray.d), scene, sampler, arena, depth);
+
+    // Compute emitted light if ray hit an area light source
+    L += isect.Le(wo);
+
+    // Add contribution of each light source
+    for (const auto &light : scene.lights) {
+        Vector3f wi;
+        Float pdf;
+        VisibilityTester visibility;
+        Spectrum Li =
+            light->Sample_Li(isect, sampler.Get2D(), &wi, &pdf, &visibility);
+        if (Li.IsBlack() || pdf == 0) continue;
+        Spectrum f = isect.bsdf->f(wo, wi);
+        if (!f.IsBlack() && visibility.Unoccluded(scene))
+            L += f * Li * AbsDot(wi, n) / pdf;
+    }
+    if (depth + 1 < maxDepth) {
+        // Trace rays for specular reflection and refraction
+        L += SpecularReflect(ray, isect, scene, sampler, arena, depth);
+        L += SpecularTransmit(ray, isect, scene, sampler, arena, depth);
+    }
+    return L;
+
+    /*
+    // Path Tracing
     ProfilePhase p(Prof::SamplerIntegratorLi);
     Spectrum L(0.f), beta(1.f);
     RayDifferential ray(r);
@@ -142,6 +188,8 @@ Spectrum TltIntegrator::Li(const RayDifferential &r, const Scene &scene,
     }
     ReportValue(pathLength, bounces);
     return L;
+    */
+
 }
 
 TltIntegrator *CreateTltIntegrator(const ParamSet &params,
