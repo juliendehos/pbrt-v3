@@ -58,6 +58,7 @@
 #include "integrators/directlighting.h"
 #include "integrators/mlt.h"
 #include "integrators/path.h"
+#include "integrators/tlt.h"
 #include "integrators/sppm.h"
 #include "integrators/volpath.h"
 #include "integrators/whitted.h"
