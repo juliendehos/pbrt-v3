@@ -48,162 +48,33 @@ Spectrum TltIntegrator::Li(const RayDifferential &r, const Scene &scene,
                             Sampler &sampler, MemoryArena &arena,
                             int depth) const {
 
-    // Whitted
     RayDifferential ray(r);
-    Spectrum L(0.);
-    // Find closest ray intersection or return background radiance
-    SurfaceInteraction isect;
-    if (!scene.Intersect(ray, &isect)) {
-        for (const auto &light : scene.lights) L += light->Le(r);
-        return L;
-    }
-
-    // Compute emitted and reflected light at ray intersection point
-
-    // Initialize common variables for Whitted integrator
-    const Normal3f &n = isect.shading.n;
-    Vector3f wo = isect.wo;
-
-    // Compute scattering functions for surface interaction
-    isect.ComputeScatteringFunctions(ray, arena);
-    if (!isect.bsdf)
-        return Li(isect.SpawnRay(ray.d), scene, sampler, arena, depth);
-
-    // Compute emitted light if ray hit an area light source
-    L += isect.Le(wo);
-
-    // Add contribution of each light source
-    for (const auto &light : scene.lights) {
-        Vector3f wi;
-        Float pdf;
-        VisibilityTester visibility;
-        Spectrum Li =
-            light->Sample_Li(isect, sampler.Get2D(), &wi, &pdf, &visibility);
-        if (Li.IsBlack() || pdf == 0) continue;
-        Spectrum f = isect.bsdf->f(wo, wi);
-        if (!f.IsBlack() && visibility.Unoccluded(scene))
-            L += f * Li * AbsDot(wi, n) / pdf;
-    }
-    if (depth + 1 < maxDepth) {
-        // Trace rays for specular reflection and refraction
-        L += SpecularReflect(ray, isect, scene, sampler, arena, depth);
-        L += SpecularTransmit(ray, isect, scene, sampler, arena, depth);
-    }
-    return L;
-}
-
-
-/*
-// Whitted
-// TltIntegrator Method Definitions
-Spectrum TltIntegrator::Li(const RayDifferential &r, const Scene &scene,
-                            Sampler &sampler, MemoryArena &arena,
-                            int depth) const {
-
-    // Whitted
-    RayDifferential ray(r);
-    Spectrum L(0.);
-    // Find closest ray intersection or return background radiance
-    SurfaceInteraction isect;
-    if (!scene.Intersect(ray, &isect)) {
-        for (const auto &light : scene.lights) L += light->Le(r);
-        return L;
-    }
-
-    // Compute emitted and reflected light at ray intersection point
-
-    // Initialize common variables for Whitted integrator
-    const Normal3f &n = isect.shading.n;
-    Vector3f wo = isect.wo;
-
-    // Compute scattering functions for surface interaction
-    isect.ComputeScatteringFunctions(ray, arena);
-    if (!isect.bsdf)
-        return Li(isect.SpawnRay(ray.d), scene, sampler, arena, depth);
-
-    // Compute emitted light if ray hit an area light source
-    L += isect.Le(wo);
-
-    // Add contribution of each light source
-    for (const auto &light : scene.lights) {
-        Vector3f wi;
-        Float pdf;
-        VisibilityTester visibility;
-        Spectrum Li =
-            light->Sample_Li(isect, sampler.Get2D(), &wi, &pdf, &visibility);
-        if (Li.IsBlack() || pdf == 0) continue;
-        Spectrum f = isect.bsdf->f(wo, wi);
-        if (!f.IsBlack() && visibility.Unoccluded(scene))
-            L += f * Li * AbsDot(wi, n) / pdf;
-    }
-    if (depth + 1 < maxDepth) {
-        // Trace rays for specular reflection and refraction
-        L += SpecularReflect(ray, isect, scene, sampler, arena, depth);
-        L += SpecularTransmit(ray, isect, scene, sampler, arena, depth);
-    }
-    return L;
-}
-*/
-
-/*
-// Path Tracing
-// TltIntegrator Method Definitions
-Spectrum TltIntegrator::Li(const RayDifferential &r, const Scene &scene,
-                            Sampler &sampler, MemoryArena &arena,
-                            int depth) const {
-
-    // Path Tracing
-    ProfilePhase p(Prof::SamplerIntegratorLi);
     Spectrum L(0.f), beta(1.f);
-    RayDifferential ray(r);
     bool specularBounce = false;
-    int bounces;
-    for (bounces = 0;; ++bounces) {
-        // Find next path vertex and accumulate contribution
 
-        // Intersect _ray_ with scene and store intersection in _isect_
+    // TODO
+    while (depth<=maxDepth) 
+    {
+        // if exit scene
         SurfaceInteraction isect;
-        bool foundIntersection = scene.Intersect(ray, &isect);
+        if (not scene.Intersect(ray, &isect)) 
+            break;
 
-        // Possibly add emitted light at intersection
-        if (bounces == 0 || specularBounce) {
-            // Add emitted light at path vertex or from the environment
-            if (foundIntersection)
-                L += beta * isect.Le(-ray.d);
-            else
-                for (const auto &light : scene.lights)
-                    L += beta * light->Le(ray);
-        }
+        // if light source
+        L = isect.Le(-ray.d);
+        if (not L.IsBlack()) 
+            break;
 
-        // Terminate path if ray escaped or _maxDepth_ was reached
-        if (!foundIntersection || bounces >= maxDepth) break;
-
-        // Compute scattering functions and skip over medium boundaries
-        isect.ComputeScatteringFunctions(ray, arena, true);
-        if (!isect.bsdf) {
-            ray = isect.SpawnRay(ray.d);
-            bounces--;
-            continue;
-        }
-
-        // Sample illumination from lights to find path contribution.
-        // (But skip this for perfectly specular BSDFs.)
-        if (isect.bsdf->NumComponents(BxDFType(BSDF_ALL & ~BSDF_SPECULAR)) >
-            0) {
-            ++totalPaths;
-            Spectrum Ld =
-                beta * UniformSampleOneLight(isect, scene, arena, sampler);
-            if (Ld.IsBlack()) ++zeroRadiancePaths;
-            Assert(Ld.y() >= 0.f);
-            L += Ld;
-        }
+        // if no bsdf
+        isect.ComputeScatteringFunctions(ray, arena);
+        if (!isect.bsdf)
+            break;
 
         // Sample BSDF to get new path direction
         Vector3f wo = -ray.d, wi;
         Float pdf;
         BxDFType flags;
-        Spectrum f = isect.bsdf->Sample_f(wo, &wi, sampler.Get2D(), &pdf,
-                                          BSDF_ALL, &flags);
+        Spectrum f = isect.bsdf->Sample_f(wo, &wi, sampler.Get2D(), &pdf, BSDF_ALL, &flags);
         if (f.IsBlack() || pdf == 0.f) break;
         beta *= f * AbsDot(wi, isect.shading.n) / pdf;
         Assert(beta.y() >= 0.f);
@@ -211,49 +82,11 @@ Spectrum TltIntegrator::Li(const RayDifferential &r, const Scene &scene,
         specularBounce = (flags & BSDF_SPECULAR) != 0;
         ray = isect.SpawnRay(wi);
 
-        // Account for subsurface scattering, if applicable
-        if (isect.bssrdf && (flags & BSDF_TRANSMISSION)) {
-            // Importance sample the BSSRDF
-            SurfaceInteraction pi;
-            Spectrum S = isect.bssrdf->Sample_S(
-                scene, sampler.Get1D(), sampler.Get2D(), arena, &pi, &pdf);
-#ifndef NDEBUG
-            Assert(std::isinf(beta.y()) == false);
-#endif
-            if (S.IsBlack() || pdf == 0) break;
-            beta *= S / pdf;
-
-            // Account for the direct subsurface scattering component
-            L += beta * UniformSampleOneLight(pi, scene, arena, sampler);
-
-            // Account for the indirect subsurface scattering component
-            Spectrum f = pi.bsdf->Sample_f(pi.wo, &wi, sampler.Get2D(), &pdf,
-                                           BSDF_ALL, &flags);
-            if (f.IsBlack() || pdf == 0) break;
-            beta *= f * AbsDot(wi, pi.shading.n) / pdf;
-#ifndef NDEBUG
-            Assert(std::isinf(beta.y()) == false);
-#endif
-            specularBounce = (flags & BSDF_SPECULAR) != 0;
-            ray = pi.SpawnRay(wi);
-        }
-
-        // Possibly terminate the path with Russian roulette
-        if (bounces > 3) {
-            Float q = std::max((Float).05, 1 - beta.y());
-            if (sampler.Get1D() < q) break;
-            beta /= 1 - q;
-            Assert(std::isinf(beta.y()) == false);
-        }
+        depth++;
     }
-    ReportValue(pathLength, bounces);
-    return L;
-}
-*/
 
-TltIntegrator *CreateTltIntegrator(const ParamSet &params,
-                                     std::shared_ptr<Sampler> sampler,
-                                     std::shared_ptr<const Camera> camera) {
-    int maxDepth = params.FindOneInt("maxdepth", 5);
-    return new TltIntegrator(maxDepth, camera, sampler);
+    ReportValue(pathLength, depth);
+    return L * beta;
+
 }
+

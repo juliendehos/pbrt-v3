@@ -1,5 +1,5 @@
 Integrator "tlt" "integer maxdepth" [5] 
-Sampler "lowdiscrepancy" "integer pixelsamples" [16]
+Sampler "lowdiscrepancy" "integer pixelsamples" [64]
 PixelFilter "box"
 Film "image" "integer xresolution" [1000] "integer yresolution" [1000] "string filename" "output_tlt.exr"
 
