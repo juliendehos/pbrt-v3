@@ -7,4 +7,4 @@ fi
 mylogin=$1
 outdir=$2
 
-scp ${mylogin}@calculco.univ-littoral.fr:.pbrt-calculco/data/veach/* ${outdir}
+scp ${mylogin}@calculco.univ-littoral.fr:.pbrt-calculco/data/veach/*.exr ${outdir}
