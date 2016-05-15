@@ -38,21 +38,27 @@
 #include "interaction.h"
 #include "paramset.h"
 #include "bssrdf.h"
+#include "sampling.h"
 #include "stats.h"
 
 STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
 STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 
+TltIntegrator *CreateTltIntegrator(const ParamSet &params,
+                                     std::shared_ptr<Sampler> sampler,
+                                     std::shared_ptr<const Camera> camera) {
+    int maxDepth = params.FindOneInt("maxdepth", 5);
+    return new TltIntegrator(maxDepth, camera, sampler);
+}
 // TltIntegrator Method Definitions
 Spectrum TltIntegrator::Li(const RayDifferential &r, const Scene &scene,
                             Sampler &sampler, MemoryArena &arena,
                             int depth) const {
 
+    ProfilePhase p(Prof::SamplerIntegratorLi);
     RayDifferential ray(r);
     Spectrum L(0.f), beta(1.f);
-    bool specularBounce = false;
 
-    // TODO
     while (depth<=maxDepth) 
     {
         // if exit scene
@@ -70,6 +76,7 @@ Spectrum TltIntegrator::Li(const RayDifferential &r, const Scene &scene,
         if (!isect.bsdf)
             break;
 
+        /*
         // Sample BSDF to get new path direction
         Vector3f wo = -ray.d, wi;
         Float pdf;
@@ -77,9 +84,15 @@ Spectrum TltIntegrator::Li(const RayDifferential &r, const Scene &scene,
         Spectrum f = isect.bsdf->Sample_f(wo, &wi, sampler.Get2D(), &pdf, BSDF_ALL, &flags);
         if (f.IsBlack() || pdf == 0.f) break;
         beta *= f * AbsDot(wi, isect.shading.n) / pdf;
-        Assert(beta.y() >= 0.f);
-        Assert(std::isinf(beta.y()) == false);
-        specularBounce = (flags & BSDF_SPECULAR) != 0;
+        ray = isect.SpawnRay(wi);
+        */
+
+        // Sample chosen _BxDF_
+        Vector3f wo = -ray.d;
+        Vector3f wi = UniformSampleSphere(sampler.Get2D());
+        float pdf = UniformSpherePdf();
+        Spectrum f = isect.bsdf->f(wo, wi);
+        beta *= f * AbsDot(wi, isect.shading.n) / pdf;
         ray = isect.SpawnRay(wi);
 
         depth++;
