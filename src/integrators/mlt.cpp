@@ -1,6 +1,6 @@
 
 /*
-    pbrt source code is Copyright(c) 1998-2015
+    pbrt source code is Copyright(c) 1998-2016
                         Matt Pharr, Greg Humphreys, and Wenzel Jakob.
 
     This file is part of pbrt.
@@ -30,7 +30,6 @@
 
  */
 
-#include "stdafx.h"
 
 // integrators/mlt.cpp*
 #include "integrators/mlt.h"
@@ -62,7 +61,7 @@ Float MLTSampler::Get1D() {
     return X[index].value;
 }
 
-Point2f MLTSampler::Get2D() { return Point2f(Get1D(), Get1D()); }
+Point2f MLTSampler::Get2D() { return {Get1D(), Get1D()}; }
 
 std::unique_ptr<Sampler> MLTSampler::Clone(int seed) {
     Severe("MLTSampler::Clone() is not implemented");

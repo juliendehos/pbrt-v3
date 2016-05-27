@@ -1,6 +1,6 @@
 
 /*
-    pbrt source code is Copyright(c) 1998-2015
+    pbrt source code is Copyright(c) 1998-2016
                         Matt Pharr, Greg Humphreys, and Wenzel Jakob.
 
     This file is part of pbrt.
@@ -37,7 +37,6 @@
 
 #ifndef PBRT_CORE_PORT_H
 #define PBRT_CORE_PORT_H
-#include "stdafx.h"
 
 #if defined(_WIN32) || defined(_WIN64)
   #define PBRT_IS_WINDOWS
