@@ -37,7 +37,7 @@
 
 #ifndef PBRT_INTEGRATORS_TLT_H
 #define PBRT_INTEGRATORS_TLT_H
-#include "stdafx.h"
+//#include "stdafx.h"
 
 // integrators/path.h*
 #include "pbrt.h"

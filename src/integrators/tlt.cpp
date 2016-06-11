@@ -30,7 +30,7 @@
 
  */
 
-#include "stdafx.h"
+//#include "stdafx.h"
 
 // integrators/tlt.cpp*
 #include "integrators/tlt.h"
