@@ -49,12 +49,8 @@
   #define PBRT_IS_LINUX
 #elif defined(__APPLE__)
   #define PBRT_IS_OSX
-#elif defined(__OpenBSD__)
-  #define PBRT_IS_OPENBSD
-#elif defined(__FreeBSD__)
-  #define PBRT_IS_FREEBSD
-#elif defined(__DragonFly__)
-  #define PBRT_IS_DRAGONFLY
+#elif defined(__unix__)
+  #define PBRT_IS_UNIX
 #endif
 
 #if defined(_MSC_VER) && _MSC_VER == 1900
