@@ -53,6 +53,8 @@
   #define PBRT_IS_OPENBSD
 #elif defined(__FreeBSD__)
   #define PBRT_IS_FREEBSD
+#elif defined(__DragonFly__)
+  #define PBRT_IS_DRAGONFLY
 #endif
 
 #if defined(_MSC_VER) && _MSC_VER == 1900
