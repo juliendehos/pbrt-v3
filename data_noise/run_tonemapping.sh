@@ -1,12 +1,13 @@
 #!/bin/sh
 
-if [ $# -ne 2 ] ; then
-    echo "usage: $0 <input image> <output image> "
+if [ $# -ne 1 ] ; then
+    echo "usage: $0 <input exr image>"
     exit
 fi
 input=$1
-output=$2
+dir_name=`dirname $1`
+base_name=`basename $1`
+name=${dir_name}/${base_name}
 
-pfsin $input | pfstmo_drago03 | pfsout tmp.exr
-exrtopng tmp.exr $output
+pfsin ${input} | pfstmo_drago03 | pfsout ${name}_drago03.png
 
