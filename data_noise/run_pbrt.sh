@@ -17,5 +17,6 @@ integrator="Integrator \"${algo}\" \"integer mutationsperpixel\" [${samples}] \"
 mkdir -p output
 cd ${scene}
 output="../output/${scene}_${algo}_${depth}_${samples}_${rng}.exr"
-echo -e "${integrator} ${sampler} `cat ${scene}.pbrt`" | ../../build/pbrt --outfile ${output}
+echo "${integrator} ${sampler} `cat ${scene}.pbrt`" | ../../build/pbrt --outfile ${output}
+#echo -e "${integrator} ${sampler} `cat ${scene}.pbrt`" | ../../build/pbrt --outfile ${output}
 
