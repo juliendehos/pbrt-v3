@@ -53,9 +53,15 @@ int RandomWalk(const Scene &scene, RayDifferential ray, Sampler &sampler,
 // BDPT Utility Functions
 Float CorrectShadingNormal(const SurfaceInteraction &isect, const Vector3f &wo,
                            const Vector3f &wi, TransportMode mode) {
-    if (mode == TransportMode::Importance)
-        return (AbsDot(wo, isect.shading.n) * AbsDot(wi, isect.n)) /
-               (AbsDot(wo, isect.n) * AbsDot(wi, isect.shading.n));
+    if (mode == TransportMode::Importance) {
+        Float num = AbsDot(wo, isect.shading.n) * AbsDot(wi, isect.n);
+        Float denom = AbsDot(wo, isect.n) * AbsDot(wi, isect.shading.n);
+        if (denom == 0) {
+            Assert(num == 0);
+            return 0;
+        }
+        return num / denom;
+    }
     else
         return 1;
 }
@@ -209,7 +215,7 @@ Float MISWeight(const Scene &scene, Vertex *lightVertices,
     if (s + t == 2) return 1;
     Float sumRi = 0;
     // Define helper function _remap0_ that deals with Dirac delta functions
-    auto remap0 = [](float f) -> float { return f != 0 ? f : 1; };
+    auto remap0 = [](Float f) -> Float { return f != 0 ? f : 1; };
 
     // Temporarily update vertex properties for current strategy
 
@@ -300,9 +306,8 @@ void BDPTIntegrator::Render(const Scene &scene) {
                 int t = depth + 2 - s;
                 if (t == 0 || (s == 1 && t == 1)) continue;
 
-                char filename[32];
-                snprintf(filename, sizeof(filename),
-                         "bdpt_d%02i_s%02i_t%02i.exr", depth, s, t);
+                std::string filename =
+                    StringPrintf("bdpt_d%02i_s%02i_t%02i.exr", depth, s, t);
 
                 weightFilms[BufferIndex(s, t)] = std::unique_ptr<Film>(new Film(
                     film->fullResolution,
@@ -330,6 +335,8 @@ void BDPTIntegrator::Render(const Scene &scene) {
                 camera->film->GetFilmTile(tileBounds);
             for (Point2i pPixel : tileBounds) {
                 tileSampler->StartPixel(pPixel);
+                if (!InsideExclusive(pPixel, pixelBounds))
+                    continue;
                 do {
                     // Generate a single sample using BDPT
                     Point2f pFilm = (Point2f)pPixel + tileSampler->Get2D();
@@ -409,6 +416,7 @@ Spectrum ConnectBDPT(const Scene &scene, Vertex *lightVertices,
         // Interpret the camera subpath as a complete path
         const Vertex &pt = cameraVertices[t - 1];
         if (pt.IsLight()) L = pt.Le(scene, cameraVertices[t - 2]) * pt.beta;
+        Assert(!L.HasNaNs());
     } else if (t == 1) {
         // Sample a point on the camera and connect it to the light subpath
         const Vertex &qs = lightVertices[s - 1];
@@ -421,9 +429,12 @@ Spectrum ConnectBDPT(const Scene &scene, Vertex *lightVertices,
             if (pdf > 0 && !Wi.IsBlack()) {
                 // Initialize dynamically sampled vertex and _L_ for $t=1$ case
                 sampled = Vertex::CreateCamera(&camera, vis.P1(), Wi / pdf);
-                L = qs.beta * qs.f(sampled) * vis.Tr(scene, sampler) *
-                    sampled.beta;
+                L = qs.beta * qs.f(sampled) * sampled.beta;
                 if (qs.IsOnSurface()) L *= AbsDot(wi, qs.ns());
+                Assert(!L.HasNaNs());
+                // Only check visibility after we know that the path would
+                // make a non-zero contribution.
+                if (!L.IsBlack()) L *= vis.Tr(scene, sampler);
             }
         }
     } else if (s == 1) {
@@ -467,6 +478,7 @@ Spectrum ConnectBDPT(const Scene &scene, Vertex *lightVertices,
     Float misWeight =
         L.IsBlack() ? 0.f : MISWeight(scene, lightVertices, cameraVertices,
                                       sampled, s, t, lightDistr);
+    Assert(!std::isnan(misWeight));
     L *= misWeight;
     if (misWeightPtr) *misWeightPtr = misWeight;
     return L;
@@ -485,7 +497,21 @@ BDPTIntegrator *CreateBDPTIntegrator(const ParamSet &params,
             "maxdepth to 5");
         maxDepth = 5;
     }
+    int np;
+    const int *pb = params.FindInt("pixelbounds", &np);
+    Bounds2i pixelBounds = camera->film->GetSampleBounds();
+    if (pb) {
+        if (np != 4)
+            Error("Expected four values for \"pixelbounds\" parameter. Got %d.",
+                  np);
+        else {
+            pixelBounds = Intersect(pixelBounds,
+                                    Bounds2i{{pb[0], pb[2]}, {pb[1], pb[3]}});
+            if (pixelBounds.Area() == 0)
+                Error("Degenerate \"pixelbounds\" specified.");
+        }
+    }
 
     return new BDPTIntegrator(sampler, camera, maxDepth, visualizeStrategies,
-                              visualizeWeights);
+                              visualizeWeights, pixelBounds);
 }

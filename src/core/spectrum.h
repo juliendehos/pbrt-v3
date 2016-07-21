@@ -40,6 +40,7 @@
 
 // core/spectrum.h*
 #include "pbrt.h"
+#include "stringprint.h"
 #include "parallel.h"
 
 // Spectrum Utility Declarations
@@ -220,13 +221,16 @@ class CoefficientSpectrum {
     }
     friend std::ostream &operator<<(std::ostream &os,
                                     const CoefficientSpectrum &s) {
-        os << "[";
+        return os << s.ToString();
+    }
+    std::string ToString() const {
+        std::string str = "[ ";
         for (int i = 0; i < nSpectrumSamples; ++i) {
-            os << s.c[i];
-            if (i + 1 < nSpectrumSamples) os << ", ";
+            str += StringPrintf("%f", c[i]);
+            if (i + 1 < nSpectrumSamples) str += ", ";
         }
-        os << "]";
-        return os;
+        str += " ]";
+        return str;
     }
     CoefficientSpectrum Clamp(Float low = 0, Float high = Infinity) const {
         CoefficientSpectrum ret;

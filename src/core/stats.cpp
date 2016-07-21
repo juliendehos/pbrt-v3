@@ -30,9 +30,9 @@
 
  */
 
-
 // core/stats.cpp*
 #include "stats.h"
+#include "stringprint.h"
 #include <algorithm>
 #include <mutex>
 #include <cinttypes>
@@ -80,22 +80,20 @@ void StatsAccumulator::Print(FILE *dest) {
     fprintf(dest, "Statistics:\n");
     std::map<std::string, std::vector<std::string>> toPrint;
 
-    char buf[512];
     for (auto &counter : counters) {
         if (counter.second == 0) continue;
         std::string category, title;
         getCategoryAndTitle(counter.first, &category, &title);
-        sprintf(buf, "%-42s               %12" PRIu64, title.c_str(),
-                counter.second);
-        toPrint[category].push_back(buf);
+        toPrint[category].push_back(StringPrintf(
+            "%-42s               %12" PRIu64, title.c_str(), counter.second));
     }
     for (auto &counter : memoryCounters) {
         if (counter.second == 0) continue;
         std::string category, title;
         getCategoryAndTitle(counter.first, &category, &title);
         double mib = (double)counter.second / (1024. * 1024.);
-        sprintf(buf, "%-42s                  %9.2f MiB", title.c_str(), mib);
-        toPrint[category].push_back(buf);
+        toPrint[category].push_back(StringPrintf(
+            "%-42s                  %9.2f MiB", title.c_str(), mib));
     }
     for (auto &distributionSum : intDistributionSums) {
         const std::string &name = distributionSum.first;
@@ -104,11 +102,11 @@ void StatsAccumulator::Print(FILE *dest) {
         getCategoryAndTitle(name, &category, &title);
         double avg = (double)distributionSum.second /
                      (double)intDistributionCounts[name];
-        sprintf(buf, "%-42s                      %.3f avg [range %" PRIu64
-                     " - %" PRIu64 "]",
-                title.c_str(), avg, intDistributionMins[name],
-                intDistributionMaxs[name]);
-        toPrint[category].push_back(buf);
+        toPrint[category].push_back(
+            StringPrintf("%-42s                      %.3f avg [range %" PRIu64
+                         " - %" PRIu64 "]",
+                         title.c_str(), avg, intDistributionMins[name],
+                         intDistributionMaxs[name]));
     }
     for (auto &distributionSum : floatDistributionSums) {
         const std::string &name = distributionSum.first;
@@ -117,10 +115,10 @@ void StatsAccumulator::Print(FILE *dest) {
         getCategoryAndTitle(name, &category, &title);
         double avg = (double)distributionSum.second /
                      (double)floatDistributionCounts[name];
-        sprintf(buf, "%-42s                      %.3f avg [range %f - %f]",
-                title.c_str(), avg, floatDistributionMins[name],
-                floatDistributionMaxs[name]);
-        toPrint[category].push_back(buf);
+        toPrint[category].push_back(
+            StringPrintf("%-42s                      %.3f avg [range %f - %f]",
+                         title.c_str(), avg, floatDistributionMins[name],
+                         floatDistributionMaxs[name]));
     }
     for (auto &percentage : percentages) {
         if (percentage.second.second == 0) continue;
@@ -128,9 +126,9 @@ void StatsAccumulator::Print(FILE *dest) {
         int64_t denom = percentage.second.second;
         std::string category, title;
         getCategoryAndTitle(percentage.first, &category, &title);
-        sprintf(buf, "%-42s%12" PRIu64 " / %12" PRIu64 " (%.2f%%)",
-                title.c_str(), num, denom, (100.f * num) / denom);
-        toPrint[category].push_back(buf);
+        toPrint[category].push_back(
+            StringPrintf("%-42s%12" PRIu64 " / %12" PRIu64 " (%.2f%%)",
+                         title.c_str(), num, denom, (100.f * num) / denom));
     }
     for (auto &ratio : ratios) {
         if (ratio.second.second == 0) continue;
@@ -138,9 +136,9 @@ void StatsAccumulator::Print(FILE *dest) {
         int64_t denom = ratio.second.second;
         std::string category, title;
         getCategoryAndTitle(ratio.first, &category, &title);
-        sprintf(buf, "%-42s%12" PRIu64 " / %12" PRIu64 " (%.2fx)",
-                title.c_str(), num, denom, (double)num / (double)denom);
-        toPrint[category].push_back(buf);
+        toPrint[category].push_back(StringPrintf(
+            "%-42s%12" PRIu64 " / %12" PRIu64 " (%.2fx)", title.c_str(), num,
+            denom, (double)num / (double)denom));
     }
     for (auto &timer : timers) {
         if (timer.second == 0) continue;
@@ -148,8 +146,8 @@ void StatsAccumulator::Print(FILE *dest) {
         double seconds = (double)ns / 1e9;
         std::string category, title;
         getCategoryAndTitle(timer.first, &category, &title);
-        sprintf(buf, "%-42s                  %9.3f s", title.c_str(), seconds);
-        toPrint[category].push_back(buf);
+        toPrint[category].push_back(StringPrintf(
+            "%-42s                  %9.3f s", title.c_str(), seconds));
     }
 
     for (auto &categories : toPrint) {
@@ -160,7 +158,7 @@ void StatsAccumulator::Print(FILE *dest) {
 }
 
 static PBRT_CONSTEXPR int NumProfEvents = (int)Prof::NumProfEvents;
-PBRT_THREAD_LOCAL uint32_t profilerState;
+PBRT_THREAD_LOCAL uint32_t ProfilerState;
 
 #ifdef PBRT_IS_OSX
 #include <execinfo.h>
@@ -196,7 +194,7 @@ static void ReportProfileSample(int, siginfo_t *, void *) {
     // Print stack trace if context is unknown
 #if 0 && defined(PBRT_IS_OSX)
     static std::atomic<int> foo(20);
-    if (profilerState == 0 && --foo == 0) {
+    if (ProfilerState == 0 && --foo == 0) {
         void* callstack[128];
         int i, frames = backtrace(callstack, 128);
         char** strs = backtrace_symbols(callstack, frames);
@@ -208,14 +206,12 @@ static void ReportProfileSample(int, siginfo_t *, void *) {
     }
 #endif
 #endif
-    if (profileSamples) profileSamples[profilerState]++;
+    if (profileSamples) profileSamples[ProfilerState]++;
 }
 
 #endif  // !PBRT_IS_WINDOWS
 void ReportProfilerResults(FILE *dest) {
 #ifndef PBRT_IS_WINDOWS
-    fprintf(dest, "  Profile\n");
-
     uint64_t overallCount = 0;
     uint64_t eventCount[NumProfEvents] = {0};
     for (int i = 0; i < 1 << NumProfEvents; ++i) {
@@ -226,10 +222,12 @@ void ReportProfilerResults(FILE *dest) {
         }
     }
 
+    std::map<std::string, uint64_t> flatResults;
     std::map<std::string, uint64_t> hierarchicalResults;
     for (int i = 0; i < 1 << NumProfEvents; ++i) {
         uint64_t count = profileSamples[i].load();
         if (count == 0) continue;
+
         std::string s;
         for (int b = 0; b < NumProfEvents; ++b) {
             if (i & (1 << b)) {
@@ -243,7 +241,18 @@ void ReportProfilerResults(FILE *dest) {
         }
         if (s == "") s = "Startup and scene construction";
         hierarchicalResults[s] = count;
+
+        if (i == 0)
+            flatResults[s] += count;
+        else {
+            // We actually want 31 - count of leading zeros, but this does
+            // nicely.
+            int innerIndex = Log2Int(i);
+            flatResults[ProfNames[innerIndex]] += count;
+        }
     }
+
+    fprintf(dest, "  Profile\n");
     for (const auto &r : hierarchicalResults) {
         float pct = (100.f * r.second) / overallCount;
         int indent = 4;
@@ -253,6 +262,15 @@ void ReportProfilerResults(FILE *dest) {
         else
             indent += 2 * std::count(r.first.begin(), r.first.end(), '/');
         const char *toPrint = r.first.c_str() + slashIndex + 1;
+        fprintf(dest, "%*c%s%*c %5.2f %%\n", indent, ' ', toPrint,
+                std::max(0, int(67 - strlen(toPrint) - indent)), ' ', pct);
+    }
+
+    fprintf(dest, "  Profile (flattened)\n");
+    for (const auto &r : flatResults) {
+        float pct = (100.f * r.second) / overallCount;
+        int indent = 4;
+        const char *toPrint = r.first.c_str();
         fprintf(dest, "%*c%s%*c %5.2f %%\n", indent, ' ', toPrint,
                 std::max(0, int(67 - strlen(toPrint) - indent)), ' ', pct);
     }
