@@ -9,5 +9,7 @@ dir_name=`dirname $1`
 base_name=`basename $1`
 name=${dir_name}/${base_name}
 
-pfsin ${input} | pfstmo_drago03 | pfsout ${name}_drago03.png
+exrtopng ${input} ${name}.png
+
+#pfsin ${input} | pfstmo_drago03 | pfsout ${name}_drago03.png
 

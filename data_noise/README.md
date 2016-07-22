@@ -20,3 +20,9 @@ oarsub -S ./run_oar.sh
 scp jdehos@calculco.univ-littoral.fr:depots/github/pbrt-v3/data_noise/output/*.exr .
 ```
 
+## convertir en png
+
+```
+find output_calculco/ -name "*.exr" -exec ./run_tonemapping.sh {} \;
+```
+
