@@ -17,7 +17,8 @@ oarsub -S ./run_oar.sh
 ## récupérer les résultats (sur une autre machine)
 
 ```
-scp jdehos@calculco.univ-littoral.fr:depots/github/pbrt-v3/data_noise/output/*.exr .
+mkdir output_calculco
+scp jdehos@calculco.univ-littoral.fr:depots/github/pbrt-v3/data_noise/output/*.exr output_calculco
 ```
 
 ## convertir en png
