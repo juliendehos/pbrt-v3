@@ -7,9 +7,9 @@ fi
 input=$1
 dir_name=`dirname $1`
 base_name=`basename $1`
-name=${dir_name}/${base_name}
+name=${dir_name}/${base_name%.exr}
 
-exrtopng ${input} ${name}.png
+exrtopng ${name}.exr ${name}.png
 
 #pfsin ${input} | pfstmo_drago03 | pfsout ${name}_drago03.png
 
