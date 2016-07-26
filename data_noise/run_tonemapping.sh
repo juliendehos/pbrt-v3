@@ -11,5 +11,6 @@ name=${dir_name}/${base_name%.exr}
 
 exrtopng ${name}.exr ${name}.png
 
-#pfsin ${input} | pfstmo_drago03 | pfsout ${name}_drago03.png
+pfsinexr ${name}.exr | pfstmo_reinhard05  | pfsoutexr tmp_${base_name}.exr && exrtopng tmp_${base_name}.exr ${name}_reinhard05.png
+rm tmp_${base_name}.exr
 
