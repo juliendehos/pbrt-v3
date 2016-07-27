@@ -18,7 +18,7 @@ if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/openexr/OpenEXR")
 endif()
 
 IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11")
   IF(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-register")
   ELSE()
@@ -208,6 +208,7 @@ SET ( PBRT_CORE_HEADERS
   )
 
 FILE ( GLOB PBRT_SOURCE
+  src/ext/*.c
   src/ext/*.cpp
   src/accelerators/*.cpp
   src/cameras/*.cpp
