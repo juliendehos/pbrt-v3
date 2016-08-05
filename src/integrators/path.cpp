@@ -30,21 +30,29 @@
 
  */
 
-
 // integrators/path.cpp*
 #include "integrators/path.h"
-#include "scene.h"
+#include "bssrdf.h"
+#include "camera.h"
+#include "film.h"
 #include "interaction.h"
 #include "paramset.h"
-#include "bssrdf.h"
+#include "scene.h"
 #include "stats.h"
-#include "film.h"
-#include "camera.h"
 
 STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
 STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 
 // PathIntegrator Method Definitions
+void PathIntegrator::Preprocess(const Scene &scene, Sampler &sampler) {
+    if (scene.lights.size() > 16) {
+        Warning(
+            "Scene has %d light sources. You may see better results with the "
+            "\"bdpt\" integrator, which handles large numbers of lights better "
+            "than \"path\".", int(scene.lights.size()));
+    }
+}
+
 Spectrum PathIntegrator::Li(const RayDifferential &r, const Scene &scene,
                             Sampler &sampler, MemoryArena &arena,
                             int depth) const {
@@ -66,7 +74,7 @@ Spectrum PathIntegrator::Li(const RayDifferential &r, const Scene &scene,
             if (foundIntersection)
                 L += beta * isect.Le(-ray.d);
             else
-                for (const auto &light : scene.lights)
+                for (const auto &light : scene.infiniteLights)
                     L += beta * light->Le(ray);
         }
 
@@ -134,7 +142,7 @@ Spectrum PathIntegrator::Li(const RayDifferential &r, const Scene &scene,
         }
 
         // Possibly terminate the path with Russian roulette
-        if (bounces > 3) {
+        if (beta.y() < rrThreshold && bounces > 3) {
             Float q = std::max((Float).05, 1 - beta.y());
             if (sampler.Get1D() < q) break;
             beta /= 1 - q;
@@ -163,5 +171,7 @@ PathIntegrator *CreatePathIntegrator(const ParamSet &params,
                 Error("Degenerate \"pixelbounds\" specified.");
         }
     }
-    return new PathIntegrator(maxDepth, camera, sampler, pixelBounds);
+    Float rrThreshold = params.FindOneFloat("rrthreshold", 1.);
+    return new PathIntegrator(maxDepth, camera, sampler, pixelBounds,
+                              rrThreshold);
 }

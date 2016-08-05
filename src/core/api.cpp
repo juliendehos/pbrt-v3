@@ -172,6 +172,7 @@ struct RenderOptions {
     std::vector<std::shared_ptr<Primitive>> primitives;
     std::map<std::string, std::vector<std::shared_ptr<Primitive>>> instances;
     std::vector<std::shared_ptr<Primitive>> *currentInstance = nullptr;
+    bool haveScatteringMedia = false;
 };
 
 struct GraphicsState {
@@ -441,8 +442,10 @@ std::shared_ptr<Material> MakeMaterial(const std::string &name,
         material = CreateKdSubsurfaceMaterial(mp);
     else if (name == "fourier")
         material = CreateFourierMaterial(mp);
-    else
-        Warning("Material \"%s\" unknown.", name.c_str());
+    else {
+        Warning("Material \"%s\" unknown. Using \"matte\".", name.c_str());
+        material = CreateMatteMaterial(mp);
+    }
 
     if ((name == "subsurface" || name == "kdsubsurface") &&
         (renderOptions->IntegratorName != "path" &&
@@ -613,13 +616,6 @@ std::shared_ptr<AreaLight> MakeAreaLight(const std::string &name,
         Warning("Area light \"%s\" unknown.", name.c_str());
     paramSet.ReportUnused();
     return area;
-}
-
-Integrator *MakeIntegrator(const std::string &name, const ParamSet &paramSet) {
-    Integrator *si = nullptr;
-
-    paramSet.ReportUnused();
-    return si;
 }
 
 std::shared_ptr<Primitive> MakeAccelerator(
@@ -960,6 +956,7 @@ void pbrtMediumInterface(const std::string &insideName,
     VERIFY_INITIALIZED("MediumInterface");
     graphicsState.currentInsideMedium = insideName;
     graphicsState.currentOutsideMedium = outsideName;
+    renderOptions->haveScatteringMedia = true;
     if (PbrtOptions.cat || PbrtOptions.toPly)
         printf("%*sMediumInterface \"%s\" \"%s\"\n", catIndentCount, "",
                insideName.c_str(), outsideName.c_str());
@@ -1089,15 +1086,18 @@ void pbrtMakeNamedMaterial(const std::string &name, const ParamSet &params) {
     WARN_IF_ANIMATED_TRANSFORM("MakeNamedMaterial");
     if (matName == "")
         Error("No parameter string \"type\" found in MakeNamedMaterial");
-    else {
-        std::shared_ptr<Material> mtl = MakeMaterial(matName, mp);
-        if (mtl) graphicsState.namedMaterials[name] = mtl;
-    }
+
     if (PbrtOptions.cat || PbrtOptions.toPly) {
         printf("%*sMakeNamedMaterial \"%s\" ", catIndentCount, "",
                name.c_str());
         params.Print(catIndentCount);
         printf("\n");
+    } else {
+        std::shared_ptr<Material> mtl = MakeMaterial(matName, mp);
+        if (graphicsState.namedMaterials.find(name) !=
+            graphicsState.namedMaterials.end())
+            Warning("Named material \"%s\" redefined.", name.c_str());
+        graphicsState.namedMaterials[name] = mtl;
     }
 }
 
@@ -1228,12 +1228,19 @@ std::shared_ptr<Material> GraphicsState::CreateMaterial(
     const ParamSet &params) {
     TextureParams mp(params, materialParams, floatTextures, spectrumTextures);
     std::shared_ptr<Material> mtl;
-    if (currentNamedMaterial != "" &&
-        namedMaterials.find(currentNamedMaterial) != namedMaterials.end())
-        mtl = namedMaterials[graphicsState.currentNamedMaterial];
-    if (!mtl) mtl = MakeMaterial(material, mp);
-    if (!mtl && material != "" && material != "none")
-        mtl = MakeMaterial("matte", mp);
+    if (currentNamedMaterial != "") {
+        if (namedMaterials.find(currentNamedMaterial) != namedMaterials.end())
+            mtl = namedMaterials[graphicsState.currentNamedMaterial];
+        else {
+            Error("Named material \"%s\" not defined. Using \"matte\".",
+                  currentNamedMaterial.c_str());
+            mtl = MakeMaterial("matte", mp);
+        }
+    } else {
+        mtl = MakeMaterial(material, mp);
+        if (!mtl && material != "" && material != "none")
+            mtl = MakeMaterial("matte", mp);
+    }
     return mtl;
 }
 
@@ -1414,6 +1421,14 @@ Integrator *RenderOptions::MakeIntegrator() const {
     } else {
         Error("Integrator \"%s\" unknown.", IntegratorName.c_str());
         return nullptr;
+    }
+
+    if (renderOptions->haveScatteringMedia && IntegratorName != "volpath" &&
+        IntegratorName != "bdpt" && IntegratorName != "mlt") {
+        Warning(
+            "Scene has scattering media but \"%s\" integrator doesn't support "
+            "volume scattering. Consider using \"volpath\", \"bdpt\", or "
+            "\"mlt\".", IntegratorName.c_str());
     }
 
     IntegratorParams.ReportUnused();

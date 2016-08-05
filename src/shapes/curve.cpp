@@ -35,8 +35,12 @@
 #include "shapes/curve.h"
 #include "paramset.h"
 #include "stats.h"
+
 STAT_MEMORY_COUNTER("Memory/Curves", curveBytes);
 STAT_PERCENT("Intersections/Ray-curve intersection tests", nHits, nTests);
+STAT_INT_DISTRIBUTION("Intersections/Curve refinement level", refinementLevel);
+STAT_COUNTER("Scene/Curves", nCurves);
+STAT_COUNTER("Scene/Split curves", nSplitCurves);
 
 // Curve Utility Functions
 static Point3f BlossomBezier(const Point3f p[4], Float u0, Float u1, Float u2) {
@@ -79,6 +83,7 @@ CurveCommon::CurveCommon(const Point3f c[4], Float width0, Float width1,
         normalAngle = std::acos(Clamp(Dot(n[0], n[1]), 0, 1));
         invSinNormalAngle = 1 / std::sin(normalAngle);
     }
+    ++nCurves;
 }
 
 std::vector<std::shared_ptr<Shape>> CreateCurve(
@@ -95,6 +100,7 @@ std::vector<std::shared_ptr<Shape>> CreateCurve(
         Float uMax = (i + 1) / (Float)nSegments;
         segments.push_back(std::make_shared<Curve>(o2w, w2o, reverseOrientation,
                                                    common, uMin, uMax));
+        ++nSplitCurves;
     }
     curveBytes += sizeof(CurveCommon) + nSegments * sizeof(Curve);
     return segments;
@@ -146,10 +152,12 @@ bool Curve::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
     Float eps =
         std::max(common->width[0], common->width[1]) * .05f;  // width / 20
 #define LOG4(x) (std::log(x) * 0.7213475108f)
-    Float fr0 = LOG4(1.41421356237f * 12.f * L0 / (8.f * eps));
+    Float fr0 = LOG4(1.41421356237f * 6.f * L0 / (8.f * eps));
 #undef LOG4
     int r0 = (int)std::round(fr0);
     int maxDepth = Clamp(r0, 0, 10);
+    ReportValue(refinementLevel, maxDepth);
+
     return recursiveIntersect(ray, tHit, isect, cp, Inverse(objectToRay), uMin,
                               uMax, maxDepth);
 }
