@@ -34,6 +34,7 @@
 #include "lights/diffuse.h"
 #include "paramset.h"
 #include "sampling.h"
+#include "shapes/triangle.h"
 
 // DiffuseAreaLight Method Definitions
 DiffuseAreaLight::DiffuseAreaLight(const Transform &LightToWorld,
@@ -45,7 +46,17 @@ DiffuseAreaLight::DiffuseAreaLight(const Transform &LightToWorld,
       Lemit(Lemit),
       shape(shape),
       twoSided(twoSided),
-      area(shape->Area()) {}
+      area(shape->Area()) {
+    // Warn if light has transformation with non-uniform scale, though not
+    // for Triangles, since this doesn't matter for them.
+    if (WorldToLight.HasScale() &&
+        dynamic_cast<const Triangle *>(shape.get()) == nullptr)
+        Warning(
+            "Scaling detected in world to light transformation! "
+            "The system has numerous assumptions, implicit and explicit, "
+            "that this transform will have no scale factors in it. "
+            "Proceed at your own risk; your image may have errors.");
+}
 
 Spectrum DiffuseAreaLight::Power() const {
     return (twoSided ? 2 : 1) * Lemit * area * Pi;
@@ -56,6 +67,10 @@ Spectrum DiffuseAreaLight::Sample_Li(const Interaction &ref, const Point2f &u,
                                      VisibilityTester *vis) const {
     Interaction pShape = shape->Sample(ref, u);
     pShape.mediumInterface = mediumInterface;
+    if ((pShape.p - ref.p).LengthSquared() == 0) {
+        *pdf = 0;
+        return 0.f;
+    }
     *wi = Normalize(pShape.p - ref.p);
     *pdf = shape->Pdf(ref, *wi);
     *vis = VisibilityTester(ref, pShape);

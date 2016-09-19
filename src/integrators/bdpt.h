@@ -109,7 +109,7 @@ inline Float InfiniteLightDensity(
     const Vector3f &w) {
     Float pdf = 0;
     for (const auto &light : scene.infiniteLights) {
-        Assert(lightToDistrIndex.find(light.get()) != lightToDistrIndex.end());
+        CHECK(lightToDistrIndex.find(light.get()) != lightToDistrIndex.end());
         size_t index = lightToDistrIndex.find(light.get())->second;
         pdf += light->Pdf_Li(Interaction(), -w) * lightDistr.func[index];
     }
@@ -123,13 +123,15 @@ class BDPTIntegrator : public Integrator {
     BDPTIntegrator(std::shared_ptr<Sampler> sampler,
                    std::shared_ptr<const Camera> camera, int maxDepth,
                    bool visualizeStrategies, bool visualizeWeights,
-                   const Bounds2i &pixelBounds)
+                   const Bounds2i &pixelBounds,
+                   const std::string &lightSampleStrategy = "power")
         : sampler(sampler),
           camera(camera),
           maxDepth(maxDepth),
           visualizeStrategies(visualizeStrategies),
           visualizeWeights(visualizeWeights),
-          pixelBounds(pixelBounds) {}
+          pixelBounds(pixelBounds),
+          lightSampleStrategy(lightSampleStrategy) {}
     void Render(const Scene &scene);
 
   private:
@@ -140,6 +142,7 @@ class BDPTIntegrator : public Integrator {
     const bool visualizeStrategies;
     const bool visualizeWeights;
     const Bounds2i pixelBounds;
+    const std::string lightSampleStrategy;
 };
 
 struct Vertex {
@@ -221,7 +224,7 @@ struct Vertex {
         case VertexType::Medium:
             return mi.phase->p(mi.wo, wi);
         default:
-            Severe("Vertex::f(): Unimplemented");
+            LOG(FATAL) << "Vertex::f(): Unimplemented";
             return Spectrum(0.f);
         }
     }
@@ -238,7 +241,7 @@ struct Vertex {
                                                    BSDF_REFLECTION |
                                                    BSDF_TRANSMISSION)) > 0;
         }
-        Severe("Unhandled vertex type in IsConnectable()");
+        LOG(FATAL) << "Unhandled vertex type in IsConnectable()";
         return false;  // NOTREACHED
     }
     bool IsLight() const {
@@ -267,7 +270,7 @@ struct Vertex {
             return Le;
         } else {
             const AreaLight *light = si.primitive->GetAreaLight();
-            Assert(light != nullptr);
+            CHECK_NOTNULL(light);
             return light->L(si, w);
         }
     }
@@ -336,7 +339,7 @@ struct Vertex {
             if (wp.LengthSquared() == 0) return 0;
             wp = Normalize(wp);
         } else
-            Assert(type == VertexType::Camera);
+            CHECK(type == VertexType::Camera);
 
         // Compute directional density depending on the vertex types
         Float pdf = 0, unused;
@@ -347,7 +350,7 @@ struct Vertex {
         else if (type == VertexType::Medium)
             pdf = mi.phase->p(wp, wn);
         else
-            Severe("Vertex::Pdf(): Unimplemented");
+            LOG(FATAL) << "Vertex::Pdf(): Unimplemented";
 
         // Return probability per unit area at vertex _next_
         return ConvertDensity(pdf, next);
@@ -365,11 +368,11 @@ struct Vertex {
             pdf = 1 / (Pi * worldRadius * worldRadius);
         } else {
             // Get pointer _light_ to the light source at the vertex
-            Assert(IsLight());
+            CHECK(IsLight());
             const Light *light = type == VertexType::Light
                                      ? ei.light
                                      : si.primitive->GetAreaLight();
-            Assert(light != nullptr);
+            CHECK_NOTNULL(light);
 
             // Compute sampling density for non-infinite light sources
             Float pdfPos, pdfDir;
@@ -395,14 +398,14 @@ struct Vertex {
             Float pdfPos, pdfDir, pdfChoice = 0;
 
             // Get pointer _light_ to the light source at the vertex
-            Assert(IsLight());
+            CHECK(IsLight());
             const Light *light = type == VertexType::Light
                                      ? ei.light
                                      : si.primitive->GetAreaLight();
-            Assert(light != nullptr);
+            CHECK_NOTNULL(light);
 
             // Compute the discrete probability of sampling _light_, _pdfChoice_
-            Assert(lightToDistrIndex.find(light) != lightToDistrIndex.end());
+            CHECK(lightToDistrIndex.find(light) != lightToDistrIndex.end());
             size_t index = lightToDistrIndex.find(light)->second;
             pdfChoice = lightDistr.DiscretePDF(index);
 

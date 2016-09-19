@@ -138,6 +138,7 @@ class StatsAccumulator {
 enum class Prof {
     IntegratorRender,
     SamplerIntegratorLi,
+    LightDistrib,
     DirectLighting,
     AccelIntersect,
     AccelIntersectP,
@@ -159,6 +160,7 @@ enum class Prof {
 static const char *ProfNames[] = {
     "Integrator::Render()",
     "SamplerIntegrator::Li()",
+    "Light Sampling Distribution",
     "Direct lighting",
     "Accelerator::Intersect()",
     "Accelerator::IntersectP()",
@@ -199,6 +201,7 @@ class ProfilePhase {
 
 void InitProfiler();
 void ReportProfilerResults(FILE *dest);
+void CleanupProfiler();
 
 // Statistics Macros
 #define STAT_COUNTER(title, var)                           \
