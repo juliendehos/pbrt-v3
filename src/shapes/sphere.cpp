@@ -36,6 +36,7 @@
 #include "sampling.h"
 #include "paramset.h"
 #include "efloat.h"
+#include "stats.h"
 
 // Sphere Method Definitions
 Bounds3f Sphere::ObjectBound() const {
@@ -45,6 +46,7 @@ Bounds3f Sphere::ObjectBound() const {
 
 bool Sphere::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
                        bool testAlphaTexture) const {
+    ProfilePhase p(Prof::ShapeIntersect);
     Float phi;
     Point3f pHit;
     // Transform _Ray_ to object space
@@ -152,6 +154,7 @@ bool Sphere::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
 }
 
 bool Sphere::IntersectP(const Ray &r, bool testAlphaTexture) const {
+    ProfilePhase p(Prof::ShapeIntersectP);
     Float phi;
     Point3f pHit;
     // Transform _Ray_ to object space
@@ -224,16 +227,17 @@ Interaction Sphere::Sample(const Point2f &u) const {
 }
 
 Interaction Sphere::Sample(const Interaction &ref, const Point2f &u) const {
-    // Compute coordinate system for sphere sampling
     Point3f pCenter = (*ObjectToWorld)(Point3f(0, 0, 0));
-    Vector3f wc = Normalize(pCenter - ref.p);
-    Vector3f wcX, wcY;
-    CoordinateSystem(wc, &wcX, &wcY);
 
     // Sample uniformly on sphere if $\pt{}$ is inside it
     Point3f pOrigin =
         OffsetRayOrigin(ref.p, ref.pError, ref.n, pCenter - ref.p);
     if (DistanceSquared(pOrigin, pCenter) <= radius * radius) return Sample(u);
+
+    // Compute coordinate system for sphere sampling
+    Vector3f wc = Normalize(pCenter - ref.p);
+    Vector3f wcX, wcY;
+    CoordinateSystem(wc, &wcX, &wcY);
 
     // Sample sphere uniformly inside subtended cone
 

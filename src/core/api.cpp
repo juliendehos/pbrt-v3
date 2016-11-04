@@ -68,6 +68,7 @@
 #include "lights/spot.h"
 #include "materials/fourier.h"
 #include "materials/glass.h"
+#include "materials/hair.h"
 #include "materials/kdsubsurface.h"
 #include "materials/matte.h"
 #include "materials/metal.h"
@@ -400,6 +401,8 @@ std::vector<std::shared_ptr<Shape>> MakeShapes(const std::string &name,
     return shapes;
 }
 
+STAT_COUNTER("Scene/Materials created", nMaterialsCreated);
+
 std::shared_ptr<Material> MakeMaterial(const std::string &name,
                                        const TextureParams &mp) {
     Material *material = nullptr;
@@ -415,6 +418,8 @@ std::shared_ptr<Material> MakeMaterial(const std::string &name,
         material = CreateGlassMaterial(mp);
     else if (name == "mirror")
         material = CreateMirrorMaterial(mp);
+    else if (name == "hair")
+        material = CreateHairMaterial(mp);
     else if (name == "mix") {
         std::string m1 = mp.FindString("namedmaterial1", "");
         std::string m2 = mp.FindString("namedmaterial2", "");
@@ -460,6 +465,7 @@ std::shared_ptr<Material> MakeMaterial(const std::string &name,
 
     mp.ReportUnused();
     if (!material) Error("Unable to create material \"%s\"", name.c_str());
+    else ++nMaterialsCreated;
     return std::shared_ptr<Material>(material);
 }
 
@@ -732,6 +738,8 @@ void pbrtInit(const Options &opt) {
 
     // General \pbrt Initialization
     SampledSpectrum::Init();
+    ParallelInit();  // Threads must be launched before the profiler is
+                     // initialized.
     InitProfiler();
 }
 
@@ -742,7 +750,7 @@ void pbrtCleanup() {
     else if (currentApiState == APIState::WorldBlock)
         Error("pbrtCleanup() called while inside world block.");
     currentApiState = APIState::Uninitialized;
-    TerminateWorkerThreads();
+    ParallelCleanup();
     renderOptions.reset(nullptr);
     CleanupProfiler();
 }
@@ -1362,19 +1370,35 @@ void pbrtWorldEnd() {
     } else {
         std::unique_ptr<Integrator> integrator(renderOptions->MakeIntegrator());
         std::unique_ptr<Scene> scene(renderOptions->MakeScene());
+
+        // This is kind of ugly; we directly override the current profiler
+        // state to switch from parsing/scene construction related stuff to
+        // rendering stuff and then switch it back below. The underlying
+        // issue is that all the rest of the profiling system assumes
+        // hierarchical inheritance of profiling state; this is the only
+        // place where that isn't the case.
+        CHECK_EQ(CurrentProfilerState(), ProfToBits(Prof::SceneConstruction));
+        ProfilerState = ProfToBits(Prof::IntegratorRender);
+
         if (scene && integrator) integrator->Render(*scene);
-        TerminateWorkerThreads();
+
+        MergeWorkerThreadStats();
+        ReportThreadStats();
+        if (!PbrtOptions.quiet) {
+            PrintStats(stdout);
+            ReportProfilerResults(stdout);
+            ClearStats();
+            ClearProfiler();
+        }
+
+        ProfilerState = ProfToBits(Prof::SceneConstruction);
     }
 
     // Clean up after rendering
     graphicsState = GraphicsState();
     transformCache.Clear();
     currentApiState = APIState::OptionsBlock;
-    ReportThreadStats();
-    if (!PbrtOptions.quiet && !PbrtOptions.cat && !PbrtOptions.toPly) {
-        PrintStats(stdout);
-        ReportProfilerResults(stdout);
-    }
+
     for (int i = 0; i < MaxTransforms; ++i) curTransform[i] = Transform();
     activeTransformBits = AllTransformsBits;
     namedCoordinateSystems.erase(namedCoordinateSystems.begin(),

@@ -36,6 +36,7 @@
 #include "interaction.h"
 #include "paramset.h"
 #include "stats.h"
+#include "parallel.h"
 #include <algorithm>
 
 STAT_TIMER("Time/BVH construction", constructionTime);
@@ -183,6 +184,7 @@ BVHAccel::BVHAccel(const std::vector<std::shared_ptr<Primitive>> &p,
     : maxPrimsInNode(std::min(255, maxPrimsInNode)),
       splitMethod(splitMethod),
       primitives(p) {
+    ProfilePhase _(Prof::AccelConstruction);
     StatTimer buildTime(&constructionTime);
     if (primitives.size() == 0) return;
     // Build BVH from _primitives_

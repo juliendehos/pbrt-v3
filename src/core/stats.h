@@ -63,6 +63,7 @@ class StatRegisterer {
 };
 
 void PrintStats(FILE *dest);
+void ClearStats();
 void ReportThreadStats();
 
 class StatsAccumulator {
@@ -117,6 +118,7 @@ class StatsAccumulator {
     }
 
     void Print(FILE *file);
+    void Clear();
 
   private:
     // StatsAccumulator Private Data
@@ -136,40 +138,73 @@ class StatsAccumulator {
 };
 
 enum class Prof {
+    SceneConstruction,
+    AccelConstruction,
+    TextureLoading,
+
     IntegratorRender,
     SamplerIntegratorLi,
-    LightDistrib,
+    LightDistribLookup,
+    LightDistribLookupL2,
+    LightDistribCreation,
     DirectLighting,
+    BSDFEvaluation,
+    BSDFSampling,
+    BSDFPdf,
+    BSSRDFEvaluation,
+    BSSRDFSampling,
     AccelIntersect,
     AccelIntersectP,
     TriIntersect,
-    // Remainder of _Prof_ _enum_ entries
     TriIntersectP,
+    CurveIntersect,
+    CurveIntersectP,
+    ShapeIntersect,
+    ShapeIntersectP,
+    LightSample,
+    LightPdf,
     ComputeScatteringFuncs,
     GenerateCameraRay,
-    BSDFEvaluation,
-    BSSRDFEvaluation,
     MergeFilmTile,
     SplatFilm,
     StartPixel,
     TexFiltTrilerp,
     TexFiltEWA,
-    NumProfEvents
+    NumProfCategories
 };
 
+static_assert((int)Prof::NumProfCategories <= 64,
+              "No more than 64 profiling categories may be defined.");
+
+inline uint64_t ProfToBits(Prof p) { return 1ull << (int)p; }
+
 static const char *ProfNames[] = {
+    "Scene parsing and creation",
+    "Acceleration structure creation",
+    "Texture loading and pyramid generation",
     "Integrator::Render()",
     "SamplerIntegrator::Li()",
-    "Light Sampling Distribution",
+    "SpatialLightDistribution Lookup",
+    "SpatialLightDistribution Global Lookup",
+    "SpatialLightDistribution Creation",
     "Direct lighting",
+    "BSDF::f()",
+    "BSDF::Sample_f()",
+    "BSDF::PDF()",
+    "BSSRDF::f()",
+    "BSSRDF::Sample_f()",
     "Accelerator::Intersect()",
     "Accelerator::IntersectP()",
     "Triangle::Intersect()",
     "Triangle::IntersectP()",
+    "Curve::Intersect()",
+    "Curve::IntersectP()",
+    "Other Shape::Intersect()",
+    "Other Shape::IntersectP()",
+    "Light::Sample_*()",
+    "Light::Pdf()",
     "Material::ComputeScatteringFunctions()",
     "Camera::GenerateRay[Differential]()",
-    "BSDF::f()",
-    "BSSRDF::f()",
     "Film::MergeTile()",
     "Film::AddSplat()",
     "Sampler::StartPixelSample()",
@@ -177,13 +212,19 @@ static const char *ProfNames[] = {
     "MIPMap::Lookup() (EWA)",
 };
 
-extern PBRT_THREAD_LOCAL uint32_t ProfilerState;
-inline uint32_t CurrentProfilerState() { return ProfilerState; }
+static_assert((int)Prof::NumProfCategories ==
+                  sizeof(ProfNames) / sizeof(ProfNames[0]),
+              "ProfNames[] array and Prof enumerant have different "
+              "numbers of entries!");
+
+extern PBRT_THREAD_LOCAL uint64_t ProfilerState;
+inline uint64_t CurrentProfilerState() { return ProfilerState; }
+
 class ProfilePhase {
   public:
     // ProfilePhase Public Methods
     ProfilePhase(Prof p) {
-        categoryBit = (1 << (int)p);
+        categoryBit = ProfToBits(p);
         reset = (ProfilerState & categoryBit) == 0;
         ProfilerState |= categoryBit;
     }
@@ -196,11 +237,15 @@ class ProfilePhase {
   private:
     // ProfilePhase Private Data
     bool reset;
-    uint32_t categoryBit;
+    uint64_t categoryBit;
 };
 
 void InitProfiler();
+void SuspendProfiler();
+void ResumeProfiler();
+void ProfilerWorkerThreadInit();
 void ReportProfilerResults(FILE *dest);
+void ClearProfiler();
 void CleanupProfiler();
 
 // Statistics Macros

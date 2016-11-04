@@ -33,11 +33,14 @@
 // core/stats.cpp*
 #include "stats.h"
 #include "stringprint.h"
+#include "parallel.h"
 #include <algorithm>
+#include <array>
 #include <mutex>
 #include <cinttypes>
 #include <type_traits>
 #include <atomic>
+#include <functional>
 #include <signal.h>
 #ifndef PBRT_IS_WINDOWS
 #include <sys/time.h>
@@ -46,7 +49,23 @@
 // Statistics Local Variables
 std::vector<std::function<void(StatsAccumulator &)>> *StatRegisterer::funcs;
 static StatsAccumulator statsAccumulator;
-static std::atomic<uint64_t> *profileSamples;
+
+// For a given profiler state (i.e., a set of "on" bits corresponding to
+// profiling categories that are active), ProfileSample stores a count of
+// the number of times that state has been active when the timer interrupt
+// to record a profiling sample has fired.
+struct ProfileSample {
+  std::atomic<uint64_t> profilerState{0};
+  std::atomic<uint64_t> count{0};
+};
+
+// We use a hash table to keep track of the profiler state counts. Because
+// we can't do dynamic memory allocation in a signal handler (and because
+// the counts are updated in a signal handler), we can't easily use
+// std::unordered_map.  We therefore allocate a fixed size hash table and
+// use linear probing if there's a conflict.
+static const int profileHashSize = 256;
+static std::array<ProfileSample, profileHashSize> profileSamples;
 
 #ifndef PBRT_IS_WINDOWS
 static void ReportProfileSample(int, siginfo_t *, void *);
@@ -64,6 +83,8 @@ void StatRegisterer::CallCallbacks(StatsAccumulator &accum) {
 }
 
 void PrintStats(FILE *dest) { statsAccumulator.Print(dest); }
+
+void ClearStats() { statsAccumulator.Clear(); }
 
 static void getCategoryAndTitle(const std::string &str, std::string *category,
                                 std::string *title) {
@@ -92,9 +113,21 @@ void StatsAccumulator::Print(FILE *dest) {
         if (counter.second == 0) continue;
         std::string category, title;
         getCategoryAndTitle(counter.first, &category, &title);
-        double mib = (double)counter.second / (1024. * 1024.);
-        toPrint[category].push_back(StringPrintf(
-            "%-42s                  %9.2f MiB", title.c_str(), mib));
+        double kb = (double)counter.second / 1024.;
+        if (kb < 1024.)
+            toPrint[category].push_back(StringPrintf(
+                "%-42s                  %9.2f kB", title.c_str(), kb));
+        else {
+            float mib = kb / 1024.;
+            if (mib < 1024.)
+                toPrint[category].push_back(StringPrintf(
+                    "%-42s                  %9.2f MiB", title.c_str(), mib));
+            else {
+                float gib = mib / 1024.;
+                toPrint[category].push_back(StringPrintf(
+                    "%-42s                  %9.2f GiB", title.c_str(), gib));
+            }
+        }
     }
     for (auto &distributionSum : intDistributionSums) {
         const std::string &name = distributionSum.first;
@@ -158,18 +191,37 @@ void StatsAccumulator::Print(FILE *dest) {
     }
 }
 
-static PBRT_CONSTEXPR int NumProfEvents = (int)Prof::NumProfEvents;
-PBRT_THREAD_LOCAL uint32_t ProfilerState;
+void StatsAccumulator::Clear() {
+    counters.clear();
+    memoryCounters.clear();
+    intDistributionSums.clear();
+    intDistributionCounts.clear();
+    intDistributionMins.clear();
+    intDistributionMaxs.clear();
+    floatDistributionSums.clear();
+    floatDistributionCounts.clear();
+    floatDistributionMins.clear();
+    floatDistributionMaxs.clear();
+    percentages.clear();
+    ratios.clear();
+    timers.clear();
+}
 
-#ifdef PBRT_IS_OSX
-#include <execinfo.h>
-#endif
+
+PBRT_THREAD_LOCAL uint64_t ProfilerState;
+static std::atomic<bool> profilerRunning{false};
+
 void InitProfiler() {
-    static_assert(NumProfEvents == sizeof(ProfNames) / sizeof(ProfNames[0]),
-                  "ProfNames[] array and Prof enumerant have different "
-                  "number of entries!");
-    profileSamples = new std::atomic<uint64_t>[1 << NumProfEvents];
-    for (int i = 0; i < (1 << NumProfEvents); ++i) profileSamples[i] = 0;
+    CHECK(!profilerRunning);
+
+    // Access the per-thread ProfilerState variable now, so that there's no
+    // risk of its first access being in the signal handler (which in turn
+    // would cause dynamic memory allocation, which is illegal in a signal
+    // handler).
+    ProfilerState = ProfToBits(Prof::SceneConstruction);
+
+    ClearProfiler();
+
 // Set timer to periodically interrupt the system for profiling
 #ifndef PBRT_IS_WINDOWS
     struct sigaction sa;
@@ -184,86 +236,116 @@ void InitProfiler() {
     timer.it_interval.tv_usec = 1000000 / 100;  // 100 Hz sampling
     timer.it_value = timer.it_interval;
 
-    if (setitimer(ITIMER_PROF, &timer, NULL) != 0)
-        Error("Timer could not be initialized");
+    CHECK_EQ(setitimer(ITIMER_PROF, &timer, NULL), 0)
+        << "Timer could not be initialized: " << strerror(errno);
 #endif
+    profilerRunning = true;
+}
+
+static std::atomic<int> profilerSuspendCount{0};
+
+void SuspendProfiler() {
+    ++profilerSuspendCount;
+}
+
+void ResumeProfiler() {
+    CHECK_GE(--profilerSuspendCount, 0);
+}
+
+void ProfilerWorkerThreadInit() {
+#ifndef PBRT_IS_WINDOWS
+    // The per-thread initialization in the worker threads has to happen
+    // *before* the profiling signal handler is installed.
+    CHECK(!profilerRunning || profilerSuspendCount > 0);
+
+    // ProfilerState is a thread-local variable that is accessed in the
+    // profiler signal handler. It's important to access it here, which
+    // causes the dynamic memory allocation for the thread-local storage to
+    // happen now, rather than in the signal handler, where this isn't
+    // allowed.
+    ProfilerState = ProfToBits(Prof::SceneConstruction);
+#endif // !PBRT_IS_WINDOWS
+}
+
+void ClearProfiler() {
+    for (ProfileSample &ps : profileSamples) {
+        ps.profilerState = 0;
+        ps.count = 0;
+    }
 }
 
 void CleanupProfiler() {
+    CHECK(profilerRunning);
 #ifndef PBRT_IS_WINDOWS
     static struct itimerval timer;
     timer.it_interval.tv_sec = 0;
     timer.it_interval.tv_usec = 0;
     timer.it_value = timer.it_interval;
 
-    if (setitimer(ITIMER_PROF, &timer, NULL) != 0)
-        Error("Timer could not be disabled");
-#endif // !PBRT_IS_WINDOWS
+    CHECK_EQ(setitimer(ITIMER_PROF, &timer, NULL), 0)
+        << "Timer could not be disabled: " << strerror(errno);
+#endif  // !PBRT_IS_WINDOWS
+    profilerRunning = false;
 }
 
 #ifndef PBRT_IS_WINDOWS
 static void ReportProfileSample(int, siginfo_t *, void *) {
-#if 0
-    // Print stack trace if context is unknown
-#if 0 && defined(PBRT_IS_OSX)
-    static std::atomic<int> foo(20);
-    if (ProfilerState == 0 && --foo == 0) {
-        void* callstack[128];
-        int i, frames = backtrace(callstack, 128);
-        char** strs = backtrace_symbols(callstack, frames);
-        for (i = 0; i < frames; ++i) {
-            printf("%s\n", strs[i]);
-        }
-        free(strs);
-        foo = 20;
-    }
-#endif
-#endif
-    CHECK(profileSamples != nullptr);
-    profileSamples[ProfilerState]++;
-}
+    if (profilerSuspendCount > 0) return;
+    if (ProfilerState == 0) return; // A ProgressReporter thread, most likely.
 
+    uint64_t h = std::hash<uint64_t>{}(ProfilerState) % (profileHashSize - 1);
+    int count = 0;
+    while (count < profileHashSize &&
+           profileSamples[h].profilerState != ProfilerState &&
+           profileSamples[h].profilerState != 0) {
+        // Wrap around to the start if we hit the end.
+        if (++h == profileHashSize) h = 0;
+        ++count;
+    }
+    CHECK_NE(count, profileHashSize) << "Profiler hash table filled up!";
+    profileSamples[h].profilerState = ProfilerState;
+    ++profileSamples[h].count;
+}
 #endif  // !PBRT_IS_WINDOWS
+
 void ReportProfilerResults(FILE *dest) {
 #ifndef PBRT_IS_WINDOWS
+    PBRT_CONSTEXPR int NumProfCategories = (int)Prof::NumProfCategories;
     uint64_t overallCount = 0;
-    uint64_t eventCount[NumProfEvents] = {0};
-    for (int i = 0; i < 1 << NumProfEvents; ++i) {
-        uint64_t count = profileSamples[i].load();
-        overallCount += count;
-        for (int b = 0; b < NumProfEvents; ++b) {
-            if (i & (1 << b)) eventCount[b] += count;
+    uint64_t eventCount[NumProfCategories] = {0};
+    int used = 0;
+    for (const ProfileSample &ps : profileSamples) {
+        if (ps.count > 0) {
+            overallCount += ps.count;
+            ++used;
+            for (int b = 0; b < NumProfCategories; ++b)
+                if (ps.profilerState & (1ull << b)) eventCount[b] += ps.count;
         }
     }
+    LOG(INFO) << "Used " << used << " / " << profileHashSize
+              << " entries in profiler hash table";
 
     std::map<std::string, uint64_t> flatResults;
     std::map<std::string, uint64_t> hierarchicalResults;
-    for (int i = 0; i < 1 << NumProfEvents; ++i) {
-        uint64_t count = profileSamples[i].load();
-        if (count == 0) continue;
+    for (const ProfileSample &ps : profileSamples) {
+        if (ps.count == 0) continue;
 
         std::string s;
-        for (int b = 0; b < NumProfEvents; ++b) {
-            if (i & (1 << b)) {
+        for (int b = 0; b < NumProfCategories; ++b) {
+            if (ps.profilerState & (1ull << b)) {
                 if (s.size() > 0) {
                     // contribute to the parents...
-                    hierarchicalResults[s] += count;
+                    hierarchicalResults[s] += ps.count;
                     s += "/";
                 }
                 s += ProfNames[b];
             }
         }
-        if (s == "") s = "Startup and scene construction";
-        hierarchicalResults[s] = count;
+        hierarchicalResults[s] = ps.count;
 
-        if (i == 0)
-            flatResults[s] += count;
-        else {
-            // We actually want 31 - count of leading zeros, but this does
-            // nicely.
-            int innerIndex = Log2Int(i);
-            flatResults[ProfNames[innerIndex]] += count;
-        }
+        int nameIndex = Log2Int(ps.profilerState);
+        DCHECK_LT(nameIndex, NumProfCategories);
+        flatResults[ProfNames[nameIndex]] += ps.count;
     }
 
     fprintf(dest, "  Profile\n");
