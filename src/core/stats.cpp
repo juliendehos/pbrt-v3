@@ -32,16 +32,16 @@
 
 // core/stats.cpp*
 #include "stats.h"
-#include "stringprint.h"
-#include "parallel.h"
+#include <signal.h>
 #include <algorithm>
 #include <array>
-#include <mutex>
-#include <cinttypes>
-#include <type_traits>
 #include <atomic>
+#include <cinttypes>
 #include <functional>
-#include <signal.h>
+#include <mutex>
+#include <type_traits>
+#include "parallel.h"
+#include "stringprint.h"
 #ifndef PBRT_IS_WINDOWS
 #include <sys/time.h>
 #endif  // !PBRT_IS_WINDOWS
@@ -55,8 +55,8 @@ static StatsAccumulator statsAccumulator;
 // the number of times that state has been active when the timer interrupt
 // to record a profiling sample has fired.
 struct ProfileSample {
-  std::atomic<uint64_t> profilerState{0};
-  std::atomic<uint64_t> count{0};
+    std::atomic<uint64_t> profilerState{0};
+    std::atomic<uint64_t> count{0};
 };
 
 // We use a hash table to keep track of the profiler state counts. Because
@@ -66,6 +66,8 @@ struct ProfileSample {
 // use linear probing if there's a conflict.
 static const int profileHashSize = 256;
 static std::array<ProfileSample, profileHashSize> profileSamples;
+
+static std::chrono::system_clock::time_point profileStartTime;
 
 #ifndef PBRT_IS_WINDOWS
 static void ReportProfileSample(int, siginfo_t *, void *);
@@ -174,15 +176,6 @@ void StatsAccumulator::Print(FILE *dest) {
             "%-42s%12" PRIu64 " / %12" PRIu64 " (%.2fx)", title.c_str(), num,
             denom, (double)num / (double)denom));
     }
-    for (auto &timer : timers) {
-        if (timer.second == 0) continue;
-        uint64_t ns = timer.second;
-        double seconds = (double)ns / 1e9;
-        std::string category, title;
-        getCategoryAndTitle(timer.first, &category, &title);
-        toPrint[category].push_back(StringPrintf(
-            "%-42s                  %9.3f s", title.c_str(), seconds));
-    }
 
     for (auto &categories : toPrint) {
         fprintf(dest, "  %s\n", categories.first.c_str());
@@ -204,9 +197,7 @@ void StatsAccumulator::Clear() {
     floatDistributionMaxs.clear();
     percentages.clear();
     ratios.clear();
-    timers.clear();
 }
-
 
 PBRT_THREAD_LOCAL uint64_t ProfilerState;
 static std::atomic<bool> profilerRunning{false};
@@ -222,6 +213,7 @@ void InitProfiler() {
 
     ClearProfiler();
 
+    profileStartTime = std::chrono::system_clock::now();
 // Set timer to periodically interrupt the system for profiling
 #ifndef PBRT_IS_WINDOWS
     struct sigaction sa;
@@ -244,13 +236,9 @@ void InitProfiler() {
 
 static std::atomic<int> profilerSuspendCount{0};
 
-void SuspendProfiler() {
-    ++profilerSuspendCount;
-}
+void SuspendProfiler() { ++profilerSuspendCount; }
 
-void ResumeProfiler() {
-    CHECK_GE(--profilerSuspendCount, 0);
-}
+void ResumeProfiler() { CHECK_GE(--profilerSuspendCount, 0); }
 
 void ProfilerWorkerThreadInit() {
 #ifndef PBRT_IS_WINDOWS
@@ -264,7 +252,7 @@ void ProfilerWorkerThreadInit() {
     // happen now, rather than in the signal handler, where this isn't
     // allowed.
     ProfilerState = ProfToBits(Prof::SceneConstruction);
-#endif // !PBRT_IS_WINDOWS
+#endif  // !PBRT_IS_WINDOWS
 }
 
 void ClearProfiler() {
@@ -291,7 +279,7 @@ void CleanupProfiler() {
 #ifndef PBRT_IS_WINDOWS
 static void ReportProfileSample(int, siginfo_t *, void *) {
     if (profilerSuspendCount > 0) return;
-    if (ProfilerState == 0) return; // A ProgressReporter thread, most likely.
+    if (ProfilerState == 0) return;  // A ProgressReporter thread, most likely.
 
     uint64_t h = std::hash<uint64_t>{}(ProfilerState) % (profileHashSize - 1);
     int count = 0;
@@ -308,8 +296,27 @@ static void ReportProfileSample(int, siginfo_t *, void *) {
 }
 #endif  // !PBRT_IS_WINDOWS
 
+static std::string timeString(float pct, std::chrono::system_clock::time_point now) {
+    pct /= 100.;  // remap passed value to to [0,1]
+    int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(now - profileStartTime).count();
+    // milliseconds for this category
+    int64_t ms = int64_t(ns * pct / 1000000.);
+    // Peel off hours, minutes, seconds, and remaining milliseconds.
+    int h = ms / (3600 * 1000);
+    ms -= h * 3600 * 1000;
+    int m = ms / (60 * 1000);
+    ms -= m * (60 * 1000);
+    int s = ms / 1000;
+    ms -= s * 1000;
+    ms /= 10;  // only printing 2 digits of fractional seconds
+    return StringPrintf("%4d:%02d:%02d.%02d", h, m, s, ms);
+}
+
 void ReportProfilerResults(FILE *dest) {
 #ifndef PBRT_IS_WINDOWS
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+
     PBRT_CONSTEXPR int NumProfCategories = (int)Prof::NumProfCategories;
     uint64_t overallCount = 0;
     uint64_t eventCount[NumProfCategories] = {0};
@@ -358,17 +365,28 @@ void ReportProfilerResults(FILE *dest) {
         else
             indent += 2 * std::count(r.first.begin(), r.first.end(), '/');
         const char *toPrint = r.first.c_str() + slashIndex + 1;
-        fprintf(dest, "%*c%s%*c %5.2f %%\n", indent, ' ', toPrint,
-                std::max(0, int(67 - strlen(toPrint) - indent)), ' ', pct);
+        fprintf(dest, "%*c%s%*c %5.2f%% (%s)\n", indent, ' ', toPrint,
+                std::max(0, int(67 - strlen(toPrint) - indent)), ' ', pct,
+                timeString(pct, now).c_str());
     }
 
+    // Sort the flattened ones by time, longest to shortest.
+    std::vector<std::pair<std::string, uint64_t>> flatVec;
+    for (const auto &r : flatResults)
+        flatVec.push_back(std::make_pair(r.first, r.second));
+    std::sort(
+        flatVec.begin(), flatVec.end(),
+        [](std::pair<std::string, uint64_t> a,
+           std::pair<std::string, uint64_t> b) { return a.second > b.second; });
+
     fprintf(dest, "  Profile (flattened)\n");
-    for (const auto &r : flatResults) {
+    for (const auto &r : flatVec) {
         float pct = (100.f * r.second) / overallCount;
         int indent = 4;
         const char *toPrint = r.first.c_str();
-        fprintf(dest, "%*c%s%*c %5.2f %%\n", indent, ' ', toPrint,
-                std::max(0, int(67 - strlen(toPrint) - indent)), ' ', pct);
+        fprintf(dest, "%*c%s%*c %5.2f%% (%s)\n", indent, ' ', toPrint,
+                std::max(0, int(67 - strlen(toPrint) - indent)), ' ', pct,
+                timeString(pct, now).c_str());
     }
     fprintf(dest, "\n");
 #endif

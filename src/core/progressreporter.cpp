@@ -33,7 +33,6 @@
 
 // core/progressreporter.cpp*
 #include "progressreporter.h"
-#include <chrono>
 #include "parallel.h"
 #include "stats.h"
 #ifdef PBRT_IS_WINDOWS
@@ -65,7 +64,7 @@ ProgressReporter::ProgressReporter(int64_t totalWork, const std::string &title)
         // signal handler.)
         SuspendProfiler();
         std::shared_ptr<Barrier> barrier = std::make_shared<Barrier>(2);
-        updateThread = std::thread([this,&barrier]() {
+        updateThread = std::thread([this, barrier]() {
             ProfilerWorkerThreadInit();
             ProfilerState = 0;
             barrier->Wait();
