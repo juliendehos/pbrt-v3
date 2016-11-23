@@ -35,6 +35,9 @@
 #include "film.h"
 #include "paramset.h"
 #include "imageio.h"
+#include "stats.h"
+
+STAT_MEMORY_COUNTER("Memory/Film pixels", filmPixelMemory);
 
 // Film Method Definitions
 Film::Film(const Point2i &resolution, const Bounds2f &cropWindow,
@@ -52,9 +55,13 @@ Film::Film(const Point2i &resolution, const Bounds2f &cropWindow,
                          std::ceil(fullResolution.y * cropWindow.pMin.y)),
                  Point2i(std::ceil(fullResolution.x * cropWindow.pMax.x),
                          std::ceil(fullResolution.y * cropWindow.pMax.y)));
+    LOG(INFO) << "Created film with full resolution " << resolution <<
+        ". Crop window of " << cropWindow << " -> croppedPixelBounds " <<
+        croppedPixelBounds;
 
     // Allocate film image storage
     pixels = std::unique_ptr<Pixel[]>(new Pixel[croppedPixelBounds.Area()]);
+    filmPixelMemory += croppedPixelBounds.Area() * sizeof(Pixel);
 
     // Precompute filter weight table
     int offset = 0;
@@ -96,8 +103,18 @@ std::unique_ptr<FilmTile> Film::GetFilmTile(const Bounds2i &sampleBounds) {
         maxSampleLuminance));
 }
 
+void Film::Clear() {
+    for (Point2i p : croppedPixelBounds) {
+        Pixel &pixel = GetPixel(p);
+        for (int c = 0; c < 3; ++c)
+            pixel.splatXYZ[c] = pixel.xyz[c] = 0;
+        pixel.filterWeightSum = 0;
+    }
+}
+
 void Film::MergeFilmTile(std::unique_ptr<FilmTile> tile) {
     ProfilePhase p(Prof::MergeFilmTile);
+    VLOG(1) << "Merging film tile " << tile->pixelBounds;
     std::lock_guard<std::mutex> lock(mutex);
     for (Point2i pixel : tile->GetPixelBounds()) {
         // Merge _pixel_ into _Film::pixels_
@@ -124,16 +141,16 @@ void Film::AddSplat(const Point2f &p, Spectrum v) {
     ProfilePhase pp(Prof::SplatFilm);
 
     if (v.HasNaNs()) {
-        Error("Ignoring splatted spectrum with NaN values at (%f, %f)",
-              p.x, p.y);
+        LOG(ERROR) << StringPrintf("Ignoring splatted spectrum with NaN values "
+                                   "at (%f, %f)", p.x, p.y);
         return;
     } else if (v.y() < 0.) {
-        Error("Ignoring splatted spectrum with negative luminance %f at (%f, %f)",
-              v.y(), p.x, p.y);
+        LOG(ERROR) << StringPrintf("Ignoring splatted spectrum with negative "
+                                   "luminance %f at (%f, %f)", v.y(), p.x, p.y);
         return;
     } else if (std::isinf(v.y())) {
-        Error("Ignoring splatted spectrum with infinite luminance at (%f, %f)",
-              p.x, p.y);
+        LOG(ERROR) << StringPrintf("Ignoring splatted spectrum with infinite "
+                                   "luminance at (%f, %f)", p.x, p.y);
         return;
     }
 
@@ -148,6 +165,8 @@ void Film::AddSplat(const Point2f &p, Spectrum v) {
 
 void Film::WriteImage(Float splatScale) {
     // Convert image to RGB and compute final pixel values
+    LOG(INFO) <<
+        "Converting image to RGB and computing final weighted pixel values";
     std::unique_ptr<Float[]> rgb(new Float[3 * croppedPixelBounds.Area()]);
     int offset = 0;
     for (Point2i p : croppedPixelBounds) {
@@ -183,6 +202,8 @@ void Film::WriteImage(Float splatScale) {
     }
 
     // Write RGB image
+    LOG(INFO) << "Writing image " << filename << " with bounds " <<
+        croppedPixelBounds;
     ::WriteImage(filename, &rgb[0], croppedPixelBounds, fullResolution);
 }
 

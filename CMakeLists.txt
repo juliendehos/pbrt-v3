@@ -14,16 +14,22 @@ endif()
 if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/openexr/OpenEXR")
   message(FATAL_ERROR "The OpenEXR submodule directory is missing! "
     "You probably did not clone the project with --recursive. It is possible to recover "
-    "by calling \"git submodule update --init --recursive\"")
+    "by running \"git submodule update --init --recursive\"")
 endif()
 
-IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/glog")
+  message(FATAL_ERROR "The glog submodule directory is missing! "
+    "You probably did not clone the project with --recursive, or first checked out "
+    "pbrt before it was added. It is possible to recover by running "
+    "\"git submodule update --init --recursive\"")
+endif()
+
+IF(CMAKE_COMPILER_IS_GNUCXX)
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11")
-  IF(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-register")
-  ELSE()
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-conversion-null")
-  ENDIF()
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-conversion-null")
+ELSEIF(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-register")
 ELSEIF(CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
@@ -124,6 +130,15 @@ INCLUDE_DIRECTORIES (
 
 SET(OPENEXR_LIBS IlmImf Imath Half)
 
+SET(WITH_GFLAGS OFF CACHE BOOL "Use gflags")
+SET(BUILD_SHARED_LIBS OFF CACHE BOOL " " FORCE)
+ADD_SUBDIRECTORY(src/ext/glog)
+SET_PROPERTY(TARGET glog PROPERTY FOLDER "dependencies")
+INCLUDE_DIRECTORIES (
+  src/ext/glog/src
+  ${CMAKE_BINARY_DIR}/src/ext/glog
+)
+
 SET ( PBRT_CORE_SOURCE
   src/core/api.cpp
   src/core/bssrdf.cpp
@@ -140,6 +155,7 @@ SET ( PBRT_CORE_SOURCE
   src/core/interaction.cpp
   src/core/interpolation.cpp
   src/core/light.cpp
+  src/core/lightdistrib.cpp
   src/core/lowdiscrepancy.cpp
   src/core/material.cpp
   src/core/medium.cpp
@@ -256,6 +272,7 @@ TARGET_LINK_LIBRARIES ( pbrt_exe
   pbrt
   ${CMAKE_THREAD_LIBS_INIT}
   ${OPENEXR_LIBS}
+  glog
   )
 
 # Tools
@@ -271,19 +288,30 @@ ADD_EXECUTABLE ( obj2pbrt
   src/tools/obj2pbrt.cpp
   )
 
+ADD_EXECUTABLE ( cyhair2pbrt
+  src/tools/cyhair2pbrt.cpp
+  )
+
 TARGET_LINK_LIBRARIES ( bsdftest
   pbrt
   ${CMAKE_THREAD_LIBS_INIT}
   ${OPENEXR_LIBS}
+  glog
   )
 
 TARGET_LINK_LIBRARIES ( imgtool
   pbrt
   ${CMAKE_THREAD_LIBS_INIT}
   ${OPENEXR_LIBS}
+  glog
   )
 
 TARGET_LINK_LIBRARIES ( obj2pbrt
+  pbrt
+  ${CMAKE_THREAD_LIBS_INIT}
+  )
+
+TARGET_LINK_LIBRARIES ( cyhair2pbrt
   pbrt
   ${CMAKE_THREAD_LIBS_INIT}
   )
@@ -303,6 +331,7 @@ TARGET_LINK_LIBRARIES ( pbrt_test
   pbrt
   ${CMAKE_THREAD_LIBS_INIT}
   ${OPENEXR_LIBS}
+  glog
   )
 
 ADD_TEST ( pbrt_unit_test
@@ -316,6 +345,7 @@ INSTALL ( TARGETS
   bsdftest
   imgtool
   obj2pbrt
+  cyhair2pbrt
   DESTINATION
   bin
   )

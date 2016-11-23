@@ -30,15 +30,14 @@
 
  */
 
-
 // integrators/volpath.cpp*
 #include "integrators/volpath.h"
-#include "scene.h"
-#include "interaction.h"
-#include "paramset.h"
 #include "bssrdf.h"
 #include "camera.h"
 #include "film.h"
+#include "interaction.h"
+#include "paramset.h"
+#include "scene.h"
 #include "stats.h"
 
 STAT_FLOAT_DISTRIBUTION("Integrator/Path length", pathLength);
@@ -46,6 +45,11 @@ STAT_COUNTER("Integrator/Volume interactions", volumeInteractions);
 STAT_COUNTER("Integrator/Surface interactions", surfaceInteractions);
 
 // VolPathIntegrator Method Definitions
+void VolPathIntegrator::Preprocess(const Scene &scene, Sampler &sampler) {
+    lightDistribution = CreateLightSampleDistribution(lightSampleStrategy,
+                                                      scene);
+}
+
 Spectrum VolPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
                                Sampler &sampler, MemoryArena &arena,
                                int depth) const {
@@ -71,7 +75,10 @@ Spectrum VolPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 
             ++volumeInteractions;
             // Handle scattering at point in medium for volumetric path tracer
-            L += beta * UniformSampleOneLight(mi, scene, arena, sampler, true);
+            const Distribution1D *lightDistrib =
+                lightDistribution->Lookup(mi.p);
+            L += beta * UniformSampleOneLight(mi, scene, arena, sampler, true,
+                                              lightDistrib);
 
             Vector3f wo = -ray.d, wi;
             mi.phase->Sample_p(wo, &wi, sampler.Get2D());
@@ -86,7 +93,7 @@ Spectrum VolPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
                 if (foundIntersection)
                     L += beta * isect.Le(-ray.d);
                 else
-                    for (const auto &light : scene.lights)
+                    for (const auto &light : scene.infiniteLights)
                         L += beta * light->Le(ray);
             }
 
@@ -103,8 +110,11 @@ Spectrum VolPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 
             // Sample illumination from lights to find attenuated path
             // contribution
+            const Distribution1D *lightDistrib =
+                lightDistribution->Lookup(isect.p);
             L += beta *
-                 UniformSampleOneLight(isect, scene, arena, sampler, true);
+                UniformSampleOneLight(isect, scene, arena, sampler, true,
+                                      lightDistrib);
 
             // Sample BSDF to get new path direction
             Vector3f wo = -ray.d, wi;
@@ -114,7 +124,7 @@ Spectrum VolPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
                                               BSDF_ALL, &flags);
             if (f.IsBlack() || pdf == 0.f) break;
             beta *= f * AbsDot(wi, isect.shading.n) / pdf;
-            Assert(std::isinf(beta.y()) == false);
+            DCHECK(std::isinf(beta.y()) == false);
             specularBounce = (flags & BSDF_SPECULAR) != 0;
             ray = isect.SpawnRay(wi);
 
@@ -124,36 +134,33 @@ Spectrum VolPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
                 SurfaceInteraction pi;
                 Spectrum S = isect.bssrdf->Sample_S(
                     scene, sampler.Get1D(), sampler.Get2D(), arena, &pi, &pdf);
-#ifndef NDEBUG
-                Assert(std::isinf(beta.y()) == false);
-#endif
+                DCHECK(std::isinf(beta.y()) == false);
                 if (S.IsBlack() || pdf == 0) break;
                 beta *= S / pdf;
 
                 // Account for the attenuated direct subsurface scattering
                 // component
                 L += beta *
-                     UniformSampleOneLight(pi, scene, arena, sampler, true);
+                     UniformSampleOneLight(pi, scene, arena, sampler, true,
+                                           lightDistribution->Lookup(pi.p));
 
                 // Account for the indirect subsurface scattering component
                 Spectrum f = pi.bsdf->Sample_f(pi.wo, &wi, sampler.Get2D(),
                                                &pdf, BSDF_ALL, &flags);
                 if (f.IsBlack() || pdf == 0) break;
                 beta *= f * AbsDot(wi, pi.shading.n) / pdf;
-#ifndef NDEBUG
-                Assert(std::isinf(beta.y()) == false);
-#endif
+                DCHECK(std::isinf(beta.y()) == false);
                 specularBounce = (flags & BSDF_SPECULAR) != 0;
                 ray = pi.SpawnRay(wi);
             }
         }
 
         // Possibly terminate the path with Russian roulette
-        if (bounces > 3) {
-            Float q = std::max((Float).05, 1 - beta.y());
+        if (beta.y() < rrThreshold && bounces > 3) {
+            Float q = std::max((Float).05, 1 - beta.MaxComponentValue());
             if (sampler.Get1D() < q) break;
             beta /= 1 - q;
-            Assert(std::isinf(beta.y()) == false);
+            DCHECK(std::isinf(beta.y()) == false);
         }
     }
     ReportValue(pathLength, bounces);
@@ -178,5 +185,9 @@ VolPathIntegrator *CreateVolPathIntegrator(
                 Error("Degenerate \"pixelbounds\" specified.");
         }
     }
-    return new VolPathIntegrator(maxDepth, camera, sampler, pixelBounds);
+    Float rrThreshold = params.FindOneFloat("rrthreshold", 1.);
+    std::string lightStrategy = params.FindOneString("lightsamplestrategy",
+                                                     "spatial");
+    return new VolPathIntegrator(maxDepth, camera, sampler, pixelBounds,
+                                 rrThreshold, lightStrategy);
 }

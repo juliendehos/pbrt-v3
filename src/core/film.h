@@ -44,6 +44,7 @@
 #include "spectrum.h"
 #include "filter.h"
 #include "stats.h"
+#include "parallel.h"
 
 // FilmTilePixel Declarations
 struct FilmTilePixel {
@@ -93,7 +94,7 @@ class Film {
 
     // Film Private Methods
     Pixel &GetPixel(const Point2i &p) {
-        Assert(InsideExclusive(p, croppedPixelBounds));
+        CHECK(InsideExclusive(p, croppedPixelBounds));
         int width = croppedPixelBounds.pMax.x - croppedPixelBounds.pMin.x;
         int offset = (p.x - croppedPixelBounds.pMin.x) +
                      (p.y - croppedPixelBounds.pMin.y) * width;
@@ -117,6 +118,7 @@ class FilmTile {
     }
     void AddSample(const Point2f &pFilm, Spectrum L,
                    Float sampleWeight = 1.) {
+        ProfilePhase _(Prof::AddFilmSample);
         if (L.y() > maxSampleLuminance)
             L *= maxSampleLuminance / L.y();
         // Compute sample's raster bounds
@@ -156,14 +158,14 @@ class FilmTile {
         }
     }
     FilmTilePixel &GetPixel(const Point2i &p) {
-        Assert(InsideExclusive(p, pixelBounds));
+        CHECK(InsideExclusive(p, pixelBounds));
         int width = pixelBounds.pMax.x - pixelBounds.pMin.x;
         int offset =
             (p.x - pixelBounds.pMin.x) + (p.y - pixelBounds.pMin.y) * width;
         return pixels[offset];
     }
     const FilmTilePixel &GetPixel(const Point2i &p) const {
-        Assert(InsideExclusive(p, pixelBounds));
+        CHECK(InsideExclusive(p, pixelBounds));
         int width = pixelBounds.pMax.x - pixelBounds.pMin.x;
         int offset =
             (p.x - pixelBounds.pMin.x) + (p.y - pixelBounds.pMin.y) * width;

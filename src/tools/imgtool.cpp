@@ -17,6 +17,7 @@
 extern "C" {
 #include "ext/ArHosekSkyModel.h"
 }
+#include <glog/logging.h>
 
 static void usage(const char *msg = nullptr, ...) {
     if (msg) {
@@ -45,9 +46,17 @@ convert options:
                        added to the original image. Default: 0.3
     --bloomswidth <w>  Width of Gaussian used to generate bloom images.
                        Default: 15
+    --despike <v>      For any pixels with a luminance value greater than <v>,
+                       replace the pixel with the median of the 3x3 neighboring
+                       pixels. Default: infinity (i.e., disabled).
     --flipy            Flip the image along the y axis
     --maxluminance <n> Luminance value mapped to white by tonemapping.
                        Default: 1
+    --preservecolors   By default, out-of-gammut colors have each component
+                       clamped to [0,1] when written to non-HDR formats. With
+                       this option enabled, such colors are scaled by their
+                       maximum component, which preserves the relative ratio
+                       between RGB components.
     --repeatpix <n>    Repeat each pixel value n times in both directions
     --scale <scale>    Scale pixel values by given amount
     --tonemap          Apply tonemapping to the image (Reinhard et al.'s
@@ -84,7 +93,7 @@ int makesky(int argc, char *argv[]) {
     auto parseArg = [&]() -> std::pair<std::string, double> {
         const char *ptr = argv[i];
         // Skip over a leading dash or two.
-        Assert(*ptr == '-');
+        CHECK_EQ(*ptr, '-');
         ++ptr;
         if (*ptr == '-') ++ptr;
 
@@ -144,6 +153,7 @@ int makesky(int argc, char *argv[]) {
 
     int nTheta = resolution, nPhi = 2 * nTheta;
     std::vector<Float> img(3 * nTheta * nPhi, 0.f);
+    ParallelInit();
     ParallelFor([&](int64_t t) {
         Float theta = float(t + 0.5) / nTheta * Pi;
         if (theta > Pi / 2.) return;
@@ -156,7 +166,7 @@ int makesky(int argc, char *argv[]) {
             // Compute the angle between the pixel's direction and the sun
             // direction.
             Float gamma = std::acos(Clamp(Dot(v, sunDir), -1, 1));
-            Assert(gamma >= 0 && gamma <= Pi);
+            CHECK(gamma >= 0 && gamma <= Pi);
 
             for (int c = 0; c < num_channels; ++c) {
                 float val = arhosekskymodel_solar_radiance(
@@ -171,7 +181,7 @@ int makesky(int argc, char *argv[]) {
 
     WriteImage(outfile, (Float *)&img[0], Bounds2i({0, 0}, {nPhi, nTheta}),
                {nPhi, nTheta});
-    TerminateWorkerThreads();
+    ParallelCleanup();
     return 0;
 }
 
@@ -359,11 +369,11 @@ int diff(int argc, char *argv[]) {
     std::unique_ptr<RGBSpectrum[]> imgs[2] = {ReadImage(filename[0], &res[0]),
                                               ReadImage(filename[1], &res[1])};
     if (!imgs[0]) {
-        fprintf(stderr, "%s: unable to read image", filename[0]);
+        fprintf(stderr, "%s: unable to read image\n", filename[0]);
         return 1;
     }
     if (!imgs[1]) {
-        fprintf(stderr, "%s: unable to read image", filename[1]);
+        fprintf(stderr, "%s: unable to read image\n", filename[1]);
         return 1;
     }
     if (res[0] != res[1]) {
@@ -581,12 +591,14 @@ int convert(int argc, char *argv[]) {
     int bloomIters = 5;
     bool tonemap = false;
     Float maxY = 1.;
+    Float despikeLimit = Infinity;
+    bool preserveColors = false;
 
     int i;
     auto parseArg = [&]() -> std::pair<std::string, double> {
         const char *ptr = argv[i];
         // Skip over a leading dash or two.
-        Assert(*ptr == '-');
+        CHECK_EQ(*ptr, '-');
         ++ptr;
         if (*ptr == '-') ++ptr;
 
@@ -607,6 +619,8 @@ int convert(int argc, char *argv[]) {
             flipy = !flipy;
         else if (!strcmp(argv[i], "--tonemap") || !strcmp(argv[i], "-tonemap"))
             tonemap = !tonemap;
+        else if (!strcmp(argv[i], "--preservecolors") || !strcmp(argv[i], "-preservecolors"))
+            preserveColors = !preserveColors;
         else {
             std::pair<std::string, double> arg = parseArg();
             if (std::get<0>(arg) == "maxluminance") {
@@ -628,6 +642,8 @@ int convert(int argc, char *argv[]) {
                 bloomScale = std::get<1>(arg);
             else if (std::get<0>(arg) == "bloomiters")
                 bloomIters = int(std::get<1>(arg));
+            else if (std::get<0>(arg) == "despike")
+                despikeLimit = std::get<1>(arg);
             else
                 usage();
         }
@@ -642,11 +658,49 @@ int convert(int argc, char *argv[]) {
     Point2i res;
     std::unique_ptr<RGBSpectrum[]> image(ReadImage(inFilename, &res));
     if (!image) {
-        fprintf(stderr, "%s: unable to read image", inFilename);
+        fprintf(stderr, "%s: unable to read image\n", inFilename);
         return 1;
     }
 
     for (int i = 0; i < res.x * res.y; ++i) image[i] *= scale;
+
+    if (despikeLimit < Infinity) {
+        std::unique_ptr<RGBSpectrum[]> filteredImg(
+            new RGBSpectrum[res.x * res.y]);
+        int despikeCount = 0;
+        for (int y = 0; y < res.y; ++y) {
+            for (int x = 0; x < res.x; ++x) {
+                if (image[y * res.x + x].y() < despikeLimit) {
+                    filteredImg[y * res.x + x] = image[y * res.x + x];
+                    continue;
+                }
+
+                // Copy all of the valid neighbor pixels into neighbors[].
+                ++despikeCount;
+                int validNeighbors = 0;
+                RGBSpectrum neighbors[9];
+                for (int dy = -1; dy <= 1; ++dy) {
+                    if (y + dy < 0 || y + dy >= res.y) continue;
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (x + dx < 0 || x + dx > res.x) continue;
+                        int offset = (y + dy) * res.x + x + dx;
+                        neighbors[validNeighbors++] = image[offset];
+                    }
+                }
+
+                // Find the median of the neighbors, sorted by luminance.
+                int mid = validNeighbors / 2;
+                std::nth_element(
+                    &neighbors[0], &neighbors[mid], &neighbors[validNeighbors],
+                    [](const RGBSpectrum &a, const RGBSpectrum &b) -> bool {
+                        return a.y() < b.y();
+                    });
+                filteredImg[y * res.x + x] = neighbors[mid];
+            }
+        }
+        std::swap(image, filteredImg);
+        fprintf(stderr, "%s: despiked %d pixels\n", inFilename, despikeCount);
+    }
 
     if (bloomLevel < Infinity)
         image = bloom(std::move(image), res, bloomLevel, bloomWidth, bloomScale,
@@ -658,6 +712,20 @@ int convert(int argc, char *argv[]) {
             // Reinhard et al. photographic tone mapping operator.
             Float scale = (1 + y / (maxY * maxY)) / (1 + y);
             image[i] *= scale;
+        }
+    }
+
+    if (preserveColors) {
+        for (int i = 0; i < res.x * res.y; ++i) {
+            Float rgb[3];
+            image[i].ToRGB(rgb);
+            Float m = std::max(rgb[0], std::max(rgb[1], rgb[2]));
+            if (m > 1) {
+                rgb[0] /= m;
+                rgb[1] /= m;
+                rgb[2] /= m;
+                image[i] = Spectrum::FromRGB(rgb);
+            }
         }
     }
 
@@ -693,6 +761,9 @@ int convert(int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
+    google::InitGoogleLogging(argv[0]);
+    FLAGS_stderrthreshold = 1; // Warning and above.
+
     if (argc < 2) usage();
 
     if (!strcmp(argv[1], "assemble"))

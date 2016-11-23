@@ -41,6 +41,7 @@
 // core/progressreporter.h*
 #include "pbrt.h"
 #include <atomic>
+#include <chrono>
 #include <thread>
 
 // ProgressReporter Declarations
@@ -76,7 +77,5 @@ class ProgressReporter {
     std::atomic<bool> exitThread;
     std::thread updateThread;
 };
-
-extern int TerminalWidth();
 
 #endif  // PBRT_CORE_PROGRESSREPORTER_H

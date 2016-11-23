@@ -4,8 +4,13 @@
 
 SCENES="breakfast spheres sportscar veach"
 DEPTHS="1 2 4 32"
-SAMPLES="4 32 256 2048 16384"
+SAMPLES="2 4 8 16 32 64 128 256 512 1024 2048 4096 8192 16384 32768 65536"
 RNGS="sobol halton random lowdiscrepancy"
+
+#SCENES="breakfast spheres sportscar veach"
+#DEPTHS="1 2 4 32"
+#SAMPLES="4 32 256 2048 16384"
+#RNGS="sobol halton random lowdiscrepancy"
 
 # algo: path
 for scene in $SCENES; do

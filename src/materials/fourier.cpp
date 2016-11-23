@@ -30,11 +30,13 @@
 
  */
 
-
 // materials/fourier.cpp*
 #include "materials/fourier.h"
 #include "paramset.h"
 #include "interaction.h"
+
+std::map<std::string, std::unique_ptr<FourierBSDFTable>>
+    FourierMaterial::loadedBSDFs;
 
 // FourierMaterial Method Definitions
 /*
@@ -98,6 +100,7 @@ bool FourierBSDFTable::Read(const std::string &filename,
                             FourierBSDFTable *bsdfTable) {
     bsdfTable->mu = bsdfTable->cdf = bsdfTable->a = nullptr;
     bsdfTable->aOffset = bsdfTable->m = nullptr;
+    bsdfTable->nChannels = 0;
 
     FILE *f = fopen(filename.c_str(), "rb");
 
@@ -183,6 +186,7 @@ bool FourierBSDFTable::Read(const std::string &filename,
     fclose(f);
     return true;
 fail:
+    bsdfTable->nChannels = 0;
     fclose(f);
     Error(
         "Tabulated BSDF file \"%s\" has an incompatible file format or "
@@ -194,7 +198,12 @@ fail:
 FourierMaterial::FourierMaterial(const std::string &filename,
                                  const std::shared_ptr<Texture<Float>> &bumpMap)
     : bumpMap(bumpMap) {
-    FourierBSDFTable::Read(filename, &bsdfTable);
+    if (loadedBSDFs.find(filename) == loadedBSDFs.end()) {
+        std::unique_ptr<FourierBSDFTable> table(new FourierBSDFTable);
+        FourierBSDFTable::Read(filename, table.get());
+        loadedBSDFs[filename] = std::move(table);
+    }
+    bsdfTable = loadedBSDFs[filename].get();
 }
 
 void FourierMaterial::ComputeScatteringFunctions(
@@ -205,8 +214,8 @@ void FourierMaterial::ComputeScatteringFunctions(
     si->bsdf = ARENA_ALLOC(arena, BSDF)(*si);
     // Checking for zero channels works as a proxy for checking whether the
     // table was successfully read from the file.
-    if (bsdfTable.nChannels > 0)
-        si->bsdf->Add(ARENA_ALLOC(arena, FourierBSDF)(bsdfTable, mode));
+    if (bsdfTable->nChannels > 0)
+        si->bsdf->Add(ARENA_ALLOC(arena, FourierBSDF)(*bsdfTable, mode));
 }
 
 FourierMaterial *CreateFourierMaterial(const TextureParams &mp) {
