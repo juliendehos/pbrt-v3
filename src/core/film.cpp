@@ -75,6 +75,36 @@ Film::Film(const Point2i &resolution, const Bounds2f &cropWindow,
     }
 }
 
+Film::Film(const Film & srcFilm) 
+    : fullResolution(srcFilm.fullResolution),
+      diagonal(srcFilm.diagonal),
+      filter(srcFilm.filter->clone()),
+      filename(srcFilm.filename),
+      scale(srcFilm.scale),
+      maxSampleLuminance(srcFilm.maxSampleLuminance),
+      croppedPixelBounds(srcFilm.croppedPixelBounds)
+{
+
+    LOG(INFO) << "Created film copy with full resolution " << fullResolution 
+        << " -> croppedPixelBounds " << croppedPixelBounds;
+
+    // Allocate film image storage
+    pixels = std::unique_ptr<Pixel[]>(new Pixel[croppedPixelBounds.Area()]);
+    filmPixelMemory += croppedPixelBounds.Area() * sizeof(Pixel);
+
+    // Precompute filter weight table
+    int offset = 0;
+    for (int y = 0; y < filterTableWidth; ++y) {
+        for (int x = 0; x < filterTableWidth; ++x, ++offset) {
+            Point2f p;
+            p.x = (x + 0.5f) * filter->radius.x / filterTableWidth;
+            p.y = (y + 0.5f) * filter->radius.y / filterTableWidth;
+            filterTable[offset] = filter->Evaluate(p);
+        }
+    }
+}
+
+
 Bounds2i Film::GetSampleBounds() const {
     Bounds2f floatBounds(Floor(Point2f(croppedPixelBounds.pMin) +
                                Vector2f(0.5f, 0.5f) - filter->radius),

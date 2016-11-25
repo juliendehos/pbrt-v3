@@ -226,6 +226,20 @@ void SamplerIntegrator::Render(const Scene &scene) {
     Preprocess(scene, *sampler);
     // Render image tiles in parallel
 
+    // ITERATIONS
+    std::vector<int> noise_nbSamplesMax {1,2,4,8,16,32,64};
+    //std::vector<int> noise_nbSamplesMax {1,10,100,1000,10000};
+    unsigned noise_nbIterations = noise_nbSamplesMax.size();
+    std::vector<Film> noise_films(noise_nbIterations, *(camera->film));
+    for (unsigned i=0; i<noise_nbIterations; i++) {
+        std::string filename = camera->film->filename;
+        int pos = filename.find_last_of('.');
+        std::string basename = filename.substr(0, pos);
+        std::string extension = filename.substr(pos);
+        noise_films[i].filename = basename + "_" 
+            + std::to_string(noise_nbSamplesMax[i]) + extension;
+    }
+
     // Compute number of tiles, _nTiles_, to use for parallel rendering
     Bounds2i sampleBounds = camera->film->GetSampleBounds();
     Vector2i sampleExtent = sampleBounds.Diagonal();
@@ -256,15 +270,11 @@ void SamplerIntegrator::Render(const Scene &scene) {
             std::unique_ptr<FilmTile> filmTile =
                 camera->film->GetFilmTile(tileBounds);
 
-            /*
-            // NOISE images aux differents temps de rendu
-            std::vector<int> noise_nbSamplesMax {1,10,100,1000,10000};
-            unsigned noise_nb = noise_nbSamplesMax.size();
-            std::vector<int> noise_nbSamples(noise_nb);
-            std::fill(noise_nbSamples.begin(), noise_nbSamples.end(), 0);
-            std::vector<FilmTile> noise_filmTiles(noise_nb, *filmTile);
-            std::vector<Film> noise_films(noise_nb, *(camera->film));
-            */
+            // ITERATIONS images aux differents temps de rendu
+            std::vector<int> noise_nbSamples(noise_nbIterations);
+            std::vector<std::unique_ptr<FilmTile>> noise_filmTiles(noise_nbIterations);
+            for (unsigned i=0; i<noise_nbIterations; i++) 
+                noise_filmTiles[i] = noise_films[i].GetFilmTile(tileBounds);
 
             // Loop over pixels in tile to render them
             for (Point2i pixel : tileBounds) {
@@ -272,6 +282,10 @@ void SamplerIntegrator::Render(const Scene &scene) {
                     ProfilePhase pp(Prof::StartPixel);
                     tileSampler->StartPixel(pixel);
                 }
+
+                // ITERATIONS
+                for (unsigned i=0; i<noise_nbIterations; i++) 
+                    noise_nbSamples[i] = 0;
 
                 // Do this check after the StartPixel() call; this keeps
                 // the usage of RNG values from (most) Samplers that use
@@ -326,6 +340,14 @@ void SamplerIntegrator::Render(const Scene &scene) {
                     // Add camera ray's contribution to image
                     filmTile->AddSample(cameraSample.pFilm, L, rayWeight);
 
+                    // ITERATIONS
+                    for (unsigned i=0; i<noise_nbIterations; i++) {
+                        if (noise_nbSamples[i] < noise_nbSamplesMax[i]) {
+                            noise_filmTiles[i]->AddSample(cameraSample.pFilm, L, rayWeight);
+                            noise_nbSamples[i]++;
+                        }
+                    }
+
                     // Free _MemoryArena_ memory from computing image sample
                     // value
                     arena.Reset();
@@ -336,6 +358,13 @@ void SamplerIntegrator::Render(const Scene &scene) {
             // Merge image tile into _Film_
             camera->film->MergeFilmTile(std::move(filmTile));
             reporter.Update();
+
+            // ITERATIONS
+            for (unsigned i=0; i<noise_nbIterations; i++) {
+                noise_films[i].MergeFilmTile(std::move(noise_filmTiles[i]));
+            }
+
+
         }, nTiles);
         reporter.Done();
     }
@@ -343,6 +372,12 @@ void SamplerIntegrator::Render(const Scene &scene) {
 
     // Save final image after rendering
     camera->film->WriteImage();
+
+    // ITERATIONS
+    for (unsigned i=0; i<noise_nbIterations; i++) {
+        noise_films[i].WriteImage();
+    }
+
 }
 
 Spectrum SamplerIntegrator::SpecularReflect(
