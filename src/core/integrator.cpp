@@ -256,6 +256,16 @@ void SamplerIntegrator::Render(const Scene &scene) {
             std::unique_ptr<FilmTile> filmTile =
                 camera->film->GetFilmTile(tileBounds);
 
+            /*
+            // NOISE images aux differents temps de rendu
+            std::vector<int> noise_nbSamplesMax {1,10,100,1000,10000};
+            unsigned noise_nb = noise_nbSamplesMax.size();
+            std::vector<int> noise_nbSamples(noise_nb);
+            std::fill(noise_nbSamples.begin(), noise_nbSamples.end(), 0);
+            std::vector<FilmTile> noise_filmTiles(noise_nb, *filmTile);
+            std::vector<Film> noise_films(noise_nb, *(camera->film));
+            */
+
             // Loop over pixels in tile to render them
             for (Point2i pixel : tileBounds) {
                 {

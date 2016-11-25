@@ -46,6 +46,7 @@ class TriangleFilter : public Filter {
   public:
     TriangleFilter(const Vector2f &radius) : Filter(radius) {}
     Float Evaluate(const Point2f &p) const;
+    Filter * clone() const { return new TriangleFilter(*this); }
 };
 
 TriangleFilter *CreateTriangleFilter(const ParamSet &ps);

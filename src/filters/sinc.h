@@ -59,6 +59,7 @@ class LanczosSincFilter : public Filter {
         Float lanczos = Sinc(x / tau);
         return Sinc(x) * lanczos;
     }
+    Filter * clone() const { return new LanczosSincFilter(*this); }
 
   private:
     const Float tau;

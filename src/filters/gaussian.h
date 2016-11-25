@@ -51,6 +51,7 @@ class GaussianFilter : public Filter {
           expX(std::exp(-alpha * radius.x * radius.x)),
           expY(std::exp(-alpha * radius.y * radius.y)) {}
     Float Evaluate(const Point2f &p) const;
+    Filter * clone() const { return new GaussianFilter(*this); }
 
   private:
     // GaussianFilter Private Data

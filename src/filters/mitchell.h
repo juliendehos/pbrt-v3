@@ -59,6 +59,7 @@ class MitchellFilter : public Filter {
                     (-18 + 12 * B + 6 * C) * x * x + (6 - 2 * B)) *
                    (1.f / 6.f);
     }
+    Filter * clone() const { return new MitchellFilter(*this); }
 
   private:
     const Float B, C;

@@ -46,6 +46,7 @@ class BoxFilter : public Filter {
   public:
     BoxFilter(const Vector2f &radius) : Filter(radius) {}
     Float Evaluate(const Point2f &p) const;
+    Filter * clone() const { return new BoxFilter(*this); }
 };
 
 BoxFilter *CreateBoxFilter(const ParamSet &ps);
