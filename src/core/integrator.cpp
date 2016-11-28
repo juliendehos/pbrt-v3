@@ -227,7 +227,9 @@ void SamplerIntegrator::Render(const Scene &scene) {
     // Render image tiles in parallel
 
     // ITERATIONS
-    unsigned noise_nbIterations = 17;
+    unsigned noise_nbIterations = 18;
+    // 17 -> 65536
+    // 18 -> 131072
     std::vector<int> noise_nbSamplesMax(noise_nbIterations, 1);
     for (unsigned i=1; i<noise_nbIterations; i++)
         noise_nbSamplesMax[i] = 2*noise_nbSamplesMax[i-1];
