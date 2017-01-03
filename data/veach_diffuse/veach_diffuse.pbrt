@@ -1,5 +1,5 @@
-#Sampler "lowdiscrepancy" "integer pixelsamples" [524288]
-Sampler "lowdiscrepancy" "integer pixelsamples" [32]
+Sampler "lowdiscrepancy" "integer pixelsamples" [524288]
+#Sampler "lowdiscrepancy" "integer pixelsamples" [32]
 Integrator "path" "integer maxdepth" [32] 
 
 PixelFilter "box"
@@ -12,7 +12,7 @@ Camera "perspective" "float fov" [34.156546598304615]
 WorldBegin
 
 #MakeNamedMaterial "Glass" "string type" "glass" "float index" [1.5]
-MakeNamedMaterial "Glass" "string type" "matte" "color Kd" [0.5 0.9 0.5]
+MakeNamedMaterial "Glass" "string type" "matte" "color Kd" [0.4 0.9 0.4]
 
 MakeNamedMaterial "LampMaterial" "string type" "plastic" "float roughness" [0.0775146484375] "color Kd" [0.0 0.0 0.0] "color Ks" [0.616 0.4752 0.352]
 
