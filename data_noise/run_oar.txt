@@ -1,2 +1,9 @@
-veach path 32 65536 sobol
-veach path 32 65536 random
+cornellbox/cornellbox_32k_1.pbrt
+cornellbox/cornellbox_32k_2.pbrt
+cornellbox/cornellbox_32k_3.pbrt
+cornellbox/cornellbox_32k_4.pbrt
+cornellbox/cornellbox_32k_5.pbrt
+cornellbox/cornellbox_32k_6.pbrt
+cornellbox/cornellbox_32k_7.pbrt
+cornellbox/cornellbox_32k_8.pbrt
+cornellbox/cornellbox_32k_16.pbrt
