@@ -1,0 +1,7 @@
+
+make -j4 -C build/ && ./build/pbrt mydata/cornellbox/cornellbox.pbrt && exrdisplay pbrt.exr 
+
+find src/ -name "*.cpp" | xargs grep -i "raydifferential "
+
+src/core/integrator.cpp
+

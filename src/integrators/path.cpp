@@ -87,6 +87,16 @@ Spectrum PathIntegrator::Li(const RayDifferential &r, const Scene &scene,
         SurfaceInteraction isect;
         bool foundIntersection = scene.Intersect(ray, &isect);
 
+        // TOTO
+        // auto n = Normalize(Cross(isect.dpdu, isect.dpdv));
+        auto n = isect.n;
+        float k = 0.5f;
+        float r = (1.01+n[0])*k;
+        float g = (1.01+n[1])*k;
+        float b = (1.01+n[2])*k;
+        const float c[3] = {r,g,b};
+        return RGBSpectrum::FromRGB(c);
+
         // Possibly add emitted light at intersection
         if (bounces == 0 || specularBounce) {
             // Add emitted light at path vertex or from the environment
